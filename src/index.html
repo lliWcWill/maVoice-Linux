@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AquaVoice Linux</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div class="header">
+        <h1>🎙️ AquaVoice Linux</h1>
+        <div class="status-indicator" id="status-indicator">Ready</div>
+      </div>
+
+      <div class="main-controls">
+        <div class="record-section">
+          <button id="record-btn" class="record-button">
+            <span class="record-icon">🔴</span>
+            <span class="record-text">Start Recording</span>
+          </button>
+          <div class="recording-status" id="recording-status" style="display: none;">
+            <div class="pulse-animation"></div>
+            <span>Recording...</span>
+          </div>
+        </div>
+
+        <div class="transcript-section">
+          <div class="transcript-box" id="transcript-box">
+            <div class="transcript-placeholder">
+              Transcribed text will appear here...
+            </div>
+          </div>
+          <div class="transcript-actions">
+            <button id="inject-btn" class="action-button" disabled>
+              📝 Inject Text
+            </button>
+            <button id="copy-btn" class="action-button" disabled>
+              📋 Copy
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <details class="settings-panel">
+          <summary>⚙️ Settings</summary>
+          <div class="settings-content">
+            <div class="setting-group">
+              <label for="groq-api-key">Groq API Key:</label>
+              <input 
+                type="password" 
+                id="groq-api-key" 
+                placeholder="Enter your Groq API key..."
+                autocomplete="off"
+              />
+              <button id="save-key-btn" class="small-button">Save</button>
+            </div>
+            <div class="setting-group">
+              <label>Display Server:</label>
+              <span id="display-server" class="info-text">Detecting...</span>
+            </div>
+            <div class="setting-group">
+              <label>Active Window:</label>
+              <span id="active-window" class="info-text">Unknown</span>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="footer">
+        <div class="shortcuts">
+          <span class="shortcut">Space: Record</span>
+          <span class="shortcut">Enter: Inject</span>
+          <span class="shortcut">Ctrl+C: Copy</span>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

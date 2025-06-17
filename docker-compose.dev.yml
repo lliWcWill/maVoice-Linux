@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  aquavoice-dev:
+    build:
+      context: .
+      target: dev
+    container_name: aquavoice-linux-dev
+    volumes:
+      - .:/app
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ~/.config/pulse:/home/dev/.config/pulse:ro
+      - /var/run/pulse:/var/run/pulse:ro
+    environment:
+      - DISPLAY=${DISPLAY}
+      - PULSE_RUNTIME_PATH=/var/run/pulse
+      - PULSE_CLIENTCONFIG=/home/dev/.config/pulse/client.conf
+    network_mode: host
+    devices:
+      - /dev/snd:/dev/snd
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    user: "${UID:-1000}:${GID:-1000}"
+    
+  # Alternative for Wayland
+  aquavoice-wayland:
+    build:
+      context: .
+      target: dev  
+    container_name: aquavoice-linux-wayland
+    volumes:
+      - .:/app
+      - /run/user/${UID:-1000}/wayland-0:/run/user/1000/wayland-0:rw
+      - ~/.config/pulse:/home/dev/.config/pulse:ro
+      - /var/run/pulse:/var/run/pulse:ro
+    environment:
+      - WAYLAND_DISPLAY=wayland-0
+      - XDG_RUNTIME_DIR=/run/user/1000
+      - PULSE_RUNTIME_PATH=/var/run/pulse
+    network_mode: host
+    devices:
+      - /dev/snd:/dev/snd
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    user: "${UID:-1000}:${GID:-1000}"
