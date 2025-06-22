@@ -27,4 +27,9 @@ Thumbs.db
 src-tauri/gen/
 
 # Logs
-*.log
+*.log2CLAUDE.md
+CLAUDE.md
+SpeechtoTextGroqDocs.md
+example.md
+readMEvision.md
+research-docs/
