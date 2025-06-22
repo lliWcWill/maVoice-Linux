@@ -3,24 +3,36 @@
   "version": "0.1.0",
   "identifier": "com.aquavoice.linux",
   "build": {
-    "frontendDist": "../dist"
+    "beforeDevCommand": "cd src-tauri/aquavoice-frontend && npm run dev -- --port 5173",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "cd src-tauri/aquavoice-frontend && npm run build",
+    "frontendDist": "../src-tauri/aquavoice-frontend/dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "title": "AquaVoice Linux",
-        "width": 400,
-        "height": 300,
+        "title": "AquaVoice",
+        "width": 80,
+        "height": 80,
         "resizable": true,
         "fullscreen": false,
         "alwaysOnTop": true,
-        "decorations": true,
-        "transparent": true
+        "decorations": false,
+        "transparent": true,
+        "center": false,
+        "x": 100,
+        "y": 100,
+        "skipTaskbar": true,
+        "visible": true,
+        "acceptFirstMouse": true,
+        "titleBarStyle": "Transparent",
+        "shadow": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.groq.com; media-src 'self' blob: mediastream:; font-src 'self' data:"
     }
   },
   "bundle": {

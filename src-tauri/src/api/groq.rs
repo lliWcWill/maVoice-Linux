@@ -69,10 +69,12 @@ impl GroqClient {
         let mut form = Form::new()
             .part("file", file_part)
             .text("model", model.to_string())
-            .text("response_format", "json".to_string());
+            .text("response_format", "json".to_string())
+            .text("temperature", "0".to_string()); // Ensure deterministic output
 
         if let Some(lang) = language {
             form = form.text("language", lang.to_string());
+            println!("🔥 Using language parameter: {}", lang);
         }
 
         // Send request
@@ -117,10 +119,12 @@ impl GroqClient {
         let mut form = Form::new()
             .part("file", file_part)
             .text("model", model.to_string())
-            .text("response_format", "json".to_string());
+            .text("response_format", "json".to_string())
+            .text("temperature", "0".to_string()); // Ensure deterministic output
 
         if let Some(lang) = language {
             form = form.text("language", lang.to_string());
+            println!("🔥 Using language parameter: {}", lang);
         }
 
         // Send request

@@ -1,18 +1,14 @@
-// Add error handling for Tauri API
-if (!window.__TAURI__) {
-  console.error('Tauri API not available');
-  document.body.innerHTML = '<div style="padding: 20px; color: red;">Error: Tauri API not available. Please run this in a Tauri application.</div>';
-} else {
-  console.log('Tauri API loaded successfully');
-}
-
+// Use global Tauri API (works better for static HTML)
 const { invoke } = window.__TAURI__.core;
+
+console.log('Tauri API loaded successfully');
 
 class AquaVoiceApp {
   constructor() {
     this.isRecording = false;
     this.currentTranscript = '';
-    this.audioData = null;
+    this.mediaRecorder = null;
+    this.audioChunks = [];
     this.groqApiKey = localStorage.getItem('groq_api_key') || '';
     
     this.initializeElements();
@@ -97,36 +93,67 @@ class AquaVoiceApp {
       return;
     }
 
-    await invoke('start_recording');
-    
-    this.isRecording = true;
-    this.elements.recordBtn.classList.add('recording');
-    this.elements.recordText.textContent = 'Stop Recording';
-    this.elements.recordIcon.textContent = '⏹️';
-    this.elements.recordingStatus.style.display = 'flex';
-    
-    this.updateStatus('Recording...', 'recording');
-    this.showTranscriptPlaceholder();
+    try {
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Create MediaRecorder with WebM format (same as your extension)
+      const options = { mimeType: 'audio/webm' };
+      this.mediaRecorder = new MediaRecorder(stream, options);
+      this.audioChunks = [];
+
+      // Collect audio data
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          this.audioChunks.push(event.data);
+        }
+      };
+
+      // Handle recording stop
+      this.mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        
+        // Update UI first
+        this.isRecording = false;
+        this.elements.recordBtn.classList.remove('recording');
+        this.elements.recordText.textContent = 'Start Recording';
+        this.elements.recordIcon.textContent = '🔴';
+        this.elements.recordingStatus.style.display = 'none';
+        
+        await this.transcribeAudio(audioBlob);
+        
+        // Release microphone
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      // Start recording
+      this.mediaRecorder.start();
+      this.isRecording = true;
+      
+      this.elements.recordBtn.classList.add('recording');
+      this.elements.recordText.textContent = 'Stop Recording';
+      this.elements.recordIcon.textContent = '⏹️';
+      this.elements.recordingStatus.style.display = 'flex';
+      
+      this.updateStatus('Recording...', 'recording');
+      this.showTranscriptPlaceholder();
+      
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      this.updateStatus('Microphone Error', 'error');
+    }
   }
 
   async stopRecording() {
-    this.updateStatus('Processing...', 'processing');
-    
-    // Stop recording and get audio data
-    this.audioData = await invoke('stop_recording');
-    
-    this.isRecording = false;
-    this.elements.recordBtn.classList.remove('recording');
-    this.elements.recordText.textContent = 'Start Recording';
-    this.elements.recordIcon.textContent = '🔴';
-    this.elements.recordingStatus.style.display = 'none';
-    
-    // Transcribe audio
-    await this.transcribeAudio();
+    if (this.mediaRecorder && this.isRecording) {
+      this.updateStatus('Processing...', 'processing');
+      this.mediaRecorder.stop();
+      // UI updates happen in onstop handler
+    }
   }
 
-  async transcribeAudio() {
-    if (!this.audioData || this.audioData.length === 0) {
+  async transcribeAudio(audioBlob) {
+    if (!audioBlob || audioBlob.size === 0) {
       this.updateStatus('No audio data', 'error');
       return;
     }
@@ -134,14 +161,16 @@ class AquaVoiceApp {
     try {
       this.updateStatus('Transcribing...', 'processing');
       
-      // Default audio config (should match CPAL settings)
-      const sampleRate = 44100;
-      const channels = 1;
+      // Convert blob to array buffer then to array for Rust
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const webm_data = Array.from(uint8Array);
       
-      const transcript = await invoke('transcribe_audio', {
-        audioData: this.audioData,
-        sampleRate,
-        channels
+      console.log(`🔥 Sending ${webm_data.length} bytes of WebM data to Rust backend`);
+      
+      // Use Rust backend to process WebM and send to Groq
+      const transcript = await invoke('process_webm_audio', {
+        webmData: webm_data
       });
       
       this.currentTranscript = transcript.trim();
@@ -159,11 +188,14 @@ class AquaVoiceApp {
   async injectText() {
     if (!this.currentTranscript) return;
     
+    console.log('🔥 injectText called with:', this.currentTranscript);
+    
     try {
-      await invoke('inject_text', { text: this.currentTranscript });
+      const result = await invoke('inject_text', { text: this.currentTranscript });
+      console.log('✅ Injection result:', result);
       this.updateStatus('Text Injected', 'success');
     } catch (error) {
-      console.error('Injection error:', error);
+      console.error('❌ Injection error:', error);
       this.updateStatus('Injection Failed', 'error');
     }
   }
