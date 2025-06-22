@@ -1,3 +1,3 @@
-pub mod capture;
+pub mod groq_recorder;
 
-pub use capture::*;
+pub use groq_recorder::GroqRecorder;

@@ -39,9 +39,9 @@ impl TextInjector {
     }
 
     fn inject_text_x11(&self, text: &str) -> Result<(), Box<dyn Error>> {
-        // Use xdotool to type the text
+        // Use xdotool to type the text - add delay to avoid clearing selection
         let output = Command::new("xdotool")
-            .args(&["type", "--clearmodifiers", text])
+            .args(&["type", "--clearmodifiers", "--delay", "12", text])
             .output()?;
 
         if !output.status.success() {
