@@ -1,6 +1,5 @@
 use reqwest::multipart;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct GroqResponse {

@@ -1,6 +1,8 @@
+//! Audio capture → in-memory WAV encoder (16-bit mono) for Groq STT.
+
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    Device, Host, Sample, SampleFormat, Stream, StreamConfig, SampleRate,
+    Device, Host, SampleFormat, Stream, StreamConfig, SampleRate,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use hound::{WavSpec, WavWriter};
@@ -13,180 +15,192 @@ pub struct GroqRecorder {
     config: StreamConfig,
     stream: Option<Stream>,
     audio_data: Arc<Mutex<Vec<f32>>>,
-    sample_sender: Option<Sender<f32>>,
-    sample_receiver: Option<Receiver<f32>>,
+    sample_sender: Sender<f32>,
+    _sample_receiver: Receiver<f32>,
 }
 
 impl GroqRecorder {
+    // ───────────────────────────────────────────────────────────────────
     pub fn new() -> Result<Self, String> {
         println!("🎤 Initializing Groq-compatible audio recorder");
-        
+
         let host = cpal::default_host();
         println!("🔧 Audio host: {}", host.id().name());
-        
+
         let input_device = host
             .default_input_device()
             .ok_or("No input device available")?;
-        
-        println!("🎧 Using device: {}", input_device.name().unwrap_or("Unknown".to_string()));
-        
-        // Configure for Groq requirements: 16KHz mono
-        let config = StreamConfig {
-            channels: 1,                    // Mono - exactly what Groq expects
-            sample_rate: SampleRate(16000), // 16KHz - Groq's native format
-            buffer_size: cpal::BufferSize::Fixed(1024),
+        println!("🎧 Using device: {}", input_device.name().unwrap_or_default());
+
+        // prefer 16 kHz mono; fallback to device default
+        let mut config = StreamConfig {
+            channels: 1,
+            sample_rate: SampleRate(16_000),
+            buffer_size: cpal::BufferSize::Default,
         };
-        
-        // Verify device supports this configuration
-        match input_device.supported_input_configs() {
-            Ok(configs) => {
-                let supported = configs
-                    .filter(|c| c.channels() == 1 && c.min_sample_rate() <= SampleRate(16000) && c.max_sample_rate() >= SampleRate(16000))
-                    .next();
-                
-                if supported.is_none() {
-                    return Err("Device doesn't support Groq format (16KHz mono)".to_string());
-                }
-                println!("✅ Device supports Groq format");
-            }
-            Err(e) => {
-                println!("⚠️ Couldn't verify device capabilities: {}", e);
-            }
+
+        let supports_16k = input_device
+            .supported_input_configs()
+            .map(|mut it| {
+                it.any(|c| {
+                    c.channels() == 1
+                        && c.min_sample_rate() <= SampleRate(16_000)
+                        && c.max_sample_rate() >= SampleRate(16_000)
+                })
+            })
+            .unwrap_or(false);
+
+        if !supports_16k {
+            println!("⚠️ 16 kHz not supported – using device default rate");
+            let def_cfg = input_device
+                .default_input_config()
+                .map_err(|e| e.to_string())?;
+            config = def_cfg.into();
+            config.channels = 1;
         }
-        
-        let audio_data = Arc::new(Mutex::new(Vec::new()));
-        let (sample_sender, sample_receiver) = unbounded();
-        
+
+        println!(
+            "📐 Input config → {} Hz, {} channel(s)",
+            config.sample_rate.0, config.channels
+        );
+
+        let audio_data = Arc::new(Mutex::new(Vec::<f32>::new()));
+        let (tx, rx) = unbounded();
+
         Ok(Self {
             host,
             input_device,
             config,
             stream: None,
             audio_data,
-            sample_sender: Some(sample_sender),
-            sample_receiver: Some(sample_receiver),
+            sample_sender: tx,
+            _sample_receiver: rx,
         })
     }
-    
-    pub fn start_recording(&mut self) -> Result<String, String> {
+
+    // ───────────────────────────────────────────────────────────────────
+    pub fn start_recording(&mut self) -> Result<(), String> {
         if self.stream.is_some() {
-            return Err("Already recording".to_string());
+            return Err("Already recording".into());
         }
-        
-        println!("🚀 Starting recording with Groq specs: 16KHz mono");
-        
-        // Clear previous audio data
-        if let Ok(mut data) = self.audio_data.lock() {
-            data.clear();
-        }
-        
-        let audio_data = self.audio_data.clone();
-        let sender = self.sample_sender.as_ref().unwrap().clone();
-        
-        let stream = self.input_device
-            .build_input_stream(
-                &self.config,
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    // Send samples for processing
-                    for &sample in data {
-                        let _ = sender.send(sample);
-                    }
-                    
-                    // Store in audio buffer
-                    if let Ok(mut buffer) = audio_data.lock() {
-                        buffer.extend_from_slice(data);
-                    }
-                },
-                |err| {
-                    eprintln!("❌ Audio stream error: {}", err);
-                },
-                None,
-            )
-            .map_err(|e| format!("Failed to build input stream: {}", e))?;
-        
-        stream.play().map_err(|e| format!("Failed to start stream: {}", e))?;
-        self.stream = Some(stream);
-        
+
+        println!("🚀 Starting recording …");
+        self.audio_data.lock().unwrap().clear();
+
+        let audio_buf = self.audio_data.clone();
+        let tx = self.sample_sender.clone();
+
+        let sample_format = self
+            .input_device
+            .default_input_config()
+            .map_err(|e| e.to_string())?
+            .sample_format();
+
+        let err_fn = |err| eprintln!("❌ Stream error: {err}");
+
+        self.stream = Some(match sample_format {
+            SampleFormat::F32 => {
+                self.input_device
+                    .build_input_stream(
+                        &self.config,
+                        move |data: &[f32], _| {
+                            for &s in data {
+                                let _ = tx.send(s);
+                            }
+                            audio_buf.lock().unwrap().extend_from_slice(data);
+                        },
+                        err_fn,
+                        None,
+                    )
+                    .map_err(|e| e.to_string())?
+            }
+            SampleFormat::I16 => {
+                self.input_device
+                    .build_input_stream(
+                        &self.config,
+                        move |data: &[i16], _| {
+                            for &s in data {
+                                let f = s as f32 / i16::MAX as f32;
+                                let _ = tx.send(f);
+                                audio_buf.lock().unwrap().push(f);
+                            }
+                        },
+                        err_fn,
+                        None,
+                    )
+                    .map_err(|e| e.to_string())?
+            }
+            SampleFormat::U16 => {
+                self.input_device
+                    .build_input_stream(
+                        &self.config,
+                        move |data: &[u16], _| {
+                            for &s in data {
+                                let f = (s as f32 / u16::MAX as f32) * 2.0 - 1.0;
+                                let _ = tx.send(f);
+                                audio_buf.lock().unwrap().push(f);
+                            }
+                        },
+                        err_fn,
+                        None,
+                    )
+                    .map_err(|e| e.to_string())?
+            }
+            _ => return Err("Unsupported sample format".into()),
+        });
+
+        self.stream
+            .as_ref()
+            .unwrap()
+            .play()
+            .map_err(|e| e.to_string())?;
+
         println!("✅ Recording started successfully");
-        Ok("Recording started".to_string())
+        Ok(())
     }
-    
+
+    // ───────────────────────────────────────────────────────────────────
     pub fn stop_recording(&mut self) -> Result<Vec<u8>, String> {
         if self.stream.is_none() {
-            return Err("Not recording".to_string());
+            return Err("Not recording".into());
         }
-        
         println!("🛑 Stopping recording and generating WAV");
-        
-        // Stop the stream
-        self.stream = None;
-        
-        // Get the recorded audio data
-        let audio_samples = if let Ok(data) = self.audio_data.lock() {
-            data.clone()
-        } else {
-            return Err("Failed to access recorded data".to_string());
-        };
-        
-        if audio_samples.is_empty() {
-            return Err("No audio data recorded".to_string());
+        self.stream.take(); // drop = stop
+
+        let samples = self.audio_data.lock().unwrap().clone();
+        if samples.is_empty() {
+            return Err("No audio captured".into());
         }
-        
-        println!("📊 Processing {} samples ({:.2}s duration)", 
-                 audio_samples.len(), 
-                 audio_samples.len() as f32 / 16000.0);
-        
-        // Generate WAV file in memory with Groq specifications
-        let mut wav_buffer = Vec::new();
+
+        let mut wav_bytes = Vec::<u8>::new();
         {
             let spec = WavSpec {
-                channels: 1,        // Mono
-                sample_rate: 16000, // 16KHz
-                bits_per_sample: 16, // 16-bit
+                channels: 1,
+                sample_rate: self.config.sample_rate.0,
+                bits_per_sample: 16,
                 sample_format: hound::SampleFormat::Int,
             };
-            
-            let mut writer = WavWriter::new(Cursor::new(&mut wav_buffer), spec)
-                .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
-            
-            // Convert f32 samples to i16 and write
-            for sample in audio_samples.iter() {
-                let sample_i16 = (*sample * i16::MAX as f32) as i16;
-                writer.write_sample(sample_i16)
-                    .map_err(|e| format!("Failed to write sample: {}", e))?;
+            let mut writer =
+                WavWriter::new(Cursor::new(&mut wav_bytes), spec)
+                    .map_err(|e| e.to_string())?;
+
+            for &s in &samples {
+                let s16 = (s * i16::MAX as f32)
+                    .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+                writer.write_sample(s16).map_err(|e| e.to_string())?;
             }
-            
-            writer.finalize()
-                .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
+            writer.finalize().unwrap();
         }
-        
-        // Audio quality analysis
-        let duration = audio_samples.len() as f32 / 16000.0;
-        let peak_amplitude = audio_samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-        let rms_level = (audio_samples.iter().map(|s| s * s).sum::<f32>() / audio_samples.len() as f32).sqrt();
-        
-        println!("🔍 Audio Quality Debug:");
-        println!("  Duration: {:.2}s", duration);
-        println!("  Sample rate: 16000 Hz");
-        println!("  Channels: 1 (mono)");
-        println!("  Peak amplitude: {:.3}", peak_amplitude);  
-        println!("  RMS level: {:.3}", rms_level);
-        println!("  WAV file size: {:.2}KB", wav_buffer.len() as f32 / 1024.0);
-        
-        // Quality warnings
-        if peak_amplitude > 0.95 {
-            println!("⚠️ Audio may be clipping (peak: {:.3})", peak_amplitude);
-        } else if peak_amplitude < 0.01 {
-            println!("⚠️ Audio level very low (peak: {:.3})", peak_amplitude);
-        } else {
-            println!("✅ Audio levels look good for speech recognition");
-        }
-        
-        println!("✅ Generated {:.2}KB WAV file for Groq", wav_buffer.len() as f32 / 1024.0);
-        
-        Ok(wav_buffer)
+
+        println!(
+            "✅ Generated {:.1} KB WAV ({} samples @ {} Hz)",
+            wav_bytes.len() as f32 / 1024.0,
+            samples.len(),
+            self.config.sample_rate.0
+        );
+        Ok(wav_bytes)
     }
-    
+
     pub fn is_recording(&self) -> bool {
         self.stream.is_some()
     }
