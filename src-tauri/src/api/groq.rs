@@ -53,8 +53,13 @@ impl GroqClient {
         file_path: &str,
         model: Option<&str>,
         language: Option<&str>,
+        prompt: Option<&str>,
+        response_format: Option<&str>,
+        temperature: Option<f32>,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let model = model.unwrap_or("whisper-large-v3-turbo");
+        let response_format = response_format.unwrap_or("json");
+        let temperature = temperature.unwrap_or(0.0);
 
         // Read the audio file
         let mut file = File::open(file_path)?;
@@ -69,12 +74,19 @@ impl GroqClient {
         let mut form = Form::new()
             .part("file", file_part)
             .text("model", model.to_string())
-            .text("response_format", "json".to_string())
-            .text("temperature", "0".to_string()); // Ensure deterministic output
+            .text("response_format", response_format.to_string())
+            .text("temperature", temperature.to_string());
 
         if let Some(lang) = language {
             form = form.text("language", lang.to_string());
             println!("🔥 Using language parameter: {}", lang);
+        }
+
+        if let Some(p) = prompt {
+            if !p.trim().is_empty() {
+                form = form.text("prompt", p.to_string());
+                println!("📝 Using prompt/dictionary: {}", p);
+            }
         }
 
         // Send request
@@ -108,6 +120,9 @@ impl GroqClient {
         filename: &str,
         model: Option<&str>,
         language: Option<&str>,
+        prompt: Option<&str>,
+        response_format: Option<&str>,
+        temperature: Option<f32>,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
         // Use whisper-large-v3-turbo for DEV TIER - best price/performance
         let model = model.unwrap_or("whisper-large-v3-turbo");
@@ -120,11 +135,11 @@ impl GroqClient {
 
         if file_size_mb > 25.0 || estimated_duration_minutes > 5.0 {
             println!("🔄 Large file detected, using chunking strategy...");
-            return self.transcribe_with_chunking(audio_data, filename, model, language).await;
+            return self.transcribe_with_chunking(audio_data, filename, model, language, prompt, response_format, temperature).await;
         }
 
         // For smaller files, direct transcription with quality monitoring
-        self.transcribe_single_chunk(audio_data, filename, model, language).await
+        self.transcribe_single_chunk(audio_data, filename, model, language, prompt, response_format, temperature).await
     }
 
     async fn transcribe_single_chunk(
@@ -133,7 +148,12 @@ impl GroqClient {
         filename: &str,
         model: &str,
         language: Option<&str>,
+        prompt: Option<&str>,
+        response_format: Option<&str>,
+        temperature: Option<f32>,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
+        let response_format = response_format.unwrap_or("json");
+        let temperature = temperature.unwrap_or(0.0);
         // Create multipart form with DEV TIER optimizations
         let file_part = Part::bytes(audio_data.to_vec())
             .file_name(filename.to_string())
@@ -142,12 +162,19 @@ impl GroqClient {
         let mut form = Form::new()
             .part("file", file_part)
             .text("model", model.to_string())
-            .text("response_format", "verbose_json".to_string()) // Get quality metadata
-            .text("temperature", "0".to_string()); // Deterministic for consistency
+            .text("response_format", response_format.to_string())
+            .text("temperature", temperature.to_string());
 
         if let Some(lang) = language {
             form = form.text("language", lang.to_string());
             println!("🌍 Using language: {}", lang);
+        }
+
+        if let Some(p) = prompt {
+            if !p.trim().is_empty() {
+                form = form.text("prompt", p.to_string());
+                println!("📝 Using prompt/dictionary: {}", p);
+            }
         }
 
         // Send request with DEV TIER speed
@@ -206,6 +233,9 @@ impl GroqClient {
         filename: &str,
         model: &str,
         language: Option<&str>,
+        prompt: Option<&str>,
+        response_format: Option<&str>,
+        temperature: Option<f32>,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
         println!("🚀 DEV TIER: Chunking large audio with 400 RPM capacity!");
         
@@ -239,7 +269,7 @@ impl GroqClient {
         for (i, chunk_data) in chunks {
             let chunk_filename = format!("chunk_{}_{}", i, filename);
             
-            match self.transcribe_single_chunk(&chunk_data, &chunk_filename, model, language).await {
+            match self.transcribe_single_chunk(&chunk_data, &chunk_filename, model, language, prompt, response_format, temperature).await {
                 Ok(text) => {
                     println!("✅ Chunk {} complete: {} chars", i, text.len());
                     transcription_parts.push(text);
