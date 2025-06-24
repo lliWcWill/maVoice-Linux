@@ -21,8 +21,11 @@
 - **🎨 Beautiful UI**: Sleek, modern interface that stays out of your way
 - **🔒 Privacy First**: Your API key, your data - everything stays local
 - **🌐 Cross-Platform**: Works on Linux (Windows and macOS coming soon!)
-- **🎤 Smart Recording**: Automatic voice detection and transcription
-- **📋 Instant Copy**: One-click copy to clipboard for seamless workflow
+- **🎤 Smart Recording**: Real-time audio visualization and voice detection
+- **📋 Instant Copy**: Automatic clipboard integration for seamless workflow
+- **⚙️ Advanced Settings**: Comprehensive configuration panel with model selection
+- **🎛️ Intuitive Controls**: Double-click to start, single-click to stop
+- **🌍 Multi-Language**: Support for 100+ languages with custom prompts
 
 ## 🏎️ Why Groq DEV Tier?
 
@@ -96,11 +99,26 @@ npm run build
 
 ## 🎮 Usage
 
-1. **Launch maVoice** - The app will appear as a floating widget
-2. **Click to start recording** - The microphone will activate
-3. **Speak naturally** - maVoice transcribes in real-time
-4. **Click to stop** - Your transcription appears instantly
-5. **Copy to clipboard** - One click and it's ready to paste!
+### Desktop App
+1. **Launch maVoice** - The app appears as a sleek floating widget
+2. **Double-click to start** - The microphone activates with visual feedback
+3. **Speak naturally** - Real-time audio visualization shows your voice
+4. **Single-click to stop** - Transcription appears instantly
+5. **Copy & paste** - Text is automatically copied to clipboard
+
+### Web Interface (http://localhost:5173)
+- **Settings panel** - Click the gear icon for full configuration
+- **API key setup** - Secure local storage of your Groq key
+- **Model selection** - Choose from Whisper variants
+- **Custom prompts** - Add technical terms, names, or style instructions
+- **Temperature control** - Adjust creativity vs accuracy
+- **Multi-language** - Support for 100+ languages
+
+### Keyboard Shortcuts
+- `Ctrl+,` - Open settings
+- `Alt+Space` - Toggle recording
+- `Double Alt` - Quick record
+- `Spacebar` - Stop recording (while active)
 
 ## 🛠️ Tech Stack
 
