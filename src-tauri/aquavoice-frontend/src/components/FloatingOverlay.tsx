@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic } from 'lucide-react';
+import { Mic, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 // Import Tauri functions for window dragging
@@ -25,6 +25,7 @@ interface FloatingOverlayProps {
   transcript: string;
   status: string;
   onCopyText: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
@@ -34,6 +35,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   transcript,
   status,
   onCopyText,
+  onOpenSettings,
 }) => {
   const [clickCount, setClickCount] = useState(0);
   const clickTimer = useRef<NodeJS.Timeout | null>(null);
@@ -42,6 +44,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [barHeights, setBarHeights] = useState([0.3, 0.6, 0.8, 0.4]);
   const animationRef = useRef<number | null>(null);
+  const [isClicking, setIsClicking] = useState(false);
   
   // Tauri invoke function
   const isTauri = window.__TAURI__ !== undefined;
@@ -53,28 +56,34 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       return; // Don't trigger clicks during drag
     }
     
-    setClickCount(prev => prev + 1);
+    // Visual feedback
+    setIsClicking(true);
+    setTimeout(() => setIsClicking(false), 150);
+    
+    const newClickCount = clickCount + 1;
+    setClickCount(newClickCount);
+    console.log(`🖱️ Click count: ${newClickCount}`);
     
     if (clickTimer.current) {
       clearTimeout(clickTimer.current);
     }
     
     clickTimer.current = setTimeout(() => {
-      if (clickCount === 1 && isRecording) {
+      if (newClickCount === 1 && isRecording) {
         // Single click while recording - stop
         console.log('🛑 Single click - stopping recording');
         onStopRecording();
-      } else if (clickCount >= 2 && !isRecording) {
+      } else if (newClickCount >= 2 && !isRecording) {
         // Double click when not recording - start
         console.log('🎤 Double click - starting recording');
         onStartRecording();
-      } else if (clickCount === 1 && !isRecording && transcript) {
+      } else if (newClickCount === 1 && !isRecording && transcript) {
         // Single click with transcript - copy to clipboard
         console.log('📋 Single click - copying to clipboard');
         onCopyText();
       }
       setClickCount(0);
-    }, 400);
+    }, 300); // Reduced timeout for more responsive feel
   };
 
   const handleMouseDown = async (e: React.MouseEvent) => {
@@ -211,11 +220,13 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       <motion.button
         ref={buttonRef}
         onClick={handleClick}
-        className={`island-button style${currentStyle} ${getButtonState()}`}
+        className={`island-button style${currentStyle} ${getButtonState()} ${isClicking ? 'clicking' : ''}`}
         style={{
-          width: '80px',  // Increased by 11% (72 -> 80)
-          height: '24px', // Increased by 18% (20 -> 24) 
-          borderRadius: '12px', // Scaled proportionally
+          width: '100px',  // 25% longer horizontally (80 -> 100)
+          height: '22px', // 7% shorter vertically (24 -> 22)
+          borderRadius: '11px', // Scaled proportionally
+          filter: isClicking ? 'brightness(1.3) saturate(1.2)' : 'none',
+          transform: isClicking ? 'scale(0.98)' : 'scale(1)',
         }}
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -269,7 +280,18 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         </div>
       </motion.button>
       
-      {/* Auto-inject removed - will be manual only */}
+      {/* Settings button - only show in web view */}
+      {!isTauri && onOpenSettings && (
+        <motion.button
+          onClick={onOpenSettings}
+          className="absolute top-2 right-2 w-6 h-6 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          title="Settings"
+        >
+          <Settings className="w-3 h-3 text-white/70" />
+        </motion.button>
+      )}
     </div>
   );
 };

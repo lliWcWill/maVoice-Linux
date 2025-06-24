@@ -87,6 +87,11 @@ async fn set_groq_api_key(state: State<'_, AppState>, api_key: String) -> Result
 async fn transcribe_audio(
     state: State<'_, AppState>,
     audio_data: Vec<u8>,
+    model: Option<String>,
+    language: Option<String>,
+    prompt: Option<String>,
+    response_format: Option<String>,
+    temperature: Option<f32>,
 ) -> Result<String, String> {
     println!("📤 Sending {:.2}KB WAV to Groq", audio_data.len() as f32 / 1024.0);
     
@@ -97,7 +102,15 @@ async fn transcribe_audio(
         client_guard.as_ref().ok_or("Groq API key not set")?.clone()
     };
     
-    match client.transcribe_audio_bytes(&audio_data, "recording.wav", Some("whisper-large-v3-turbo"), Some("en")).await {
+    match client.transcribe_audio_bytes(
+        &audio_data, 
+        "recording.wav", 
+        model.as_deref(), 
+        language.as_deref(), 
+        prompt.as_deref(), 
+        response_format.as_deref(), 
+        temperature
+    ).await {
         Ok(transcription) => {
             println!("🎯 === TRANSCRIPTION RESULT ===");
             println!("📝 Text: {}", transcription);
