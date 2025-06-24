@@ -1,5 +1,6 @@
 # Rust
 src-tauri/target/
+src-gtk/target/
 **/*.rs.bk
 Cargo.lock
 
@@ -33,3 +34,6 @@ SpeechtoTextGroqDocs.md
 example.md
 readMEvision.md
 research-docs/
+
+# Environment variables
+.env

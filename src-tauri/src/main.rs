@@ -6,7 +6,8 @@ mod audio;
 mod system;
 mod webm;
 
-use tauri::State;
+use tauri::{State, Manager};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use std::sync::{Arc, Mutex};
 use api::GroqClient;
 use audio::GroqRecorder;
@@ -66,6 +67,14 @@ async fn is_recording(state: State<'_, AppState>) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn get_audio_levels(state: State<'_, AppState>) -> Result<[f32; 4], String> {
+    let recorder = state.groq_recorder.lock()
+        .map_err(|e| format!("Recorder lock error: {}", e))?;
+    
+    Ok(recorder.get_audio_levels())
+}
+
+#[tauri::command]
 async fn set_groq_api_key(state: State<'_, AppState>, api_key: String) -> Result<String, String> {
     let groq_client = state.groq_client.clone();
     let mut client_guard = groq_client.lock().map_err(|e| e.to_string())?;
@@ -75,25 +84,25 @@ async fn set_groq_api_key(state: State<'_, AppState>, api_key: String) -> Result
 }
 
 #[tauri::command]
-async fn process_webm_audio(
+async fn transcribe_audio(
     state: State<'_, AppState>,
-    webm_data: Vec<u8>,
+    audio_data: Vec<u8>,
 ) -> Result<String, String> {
-    println!("🔥 process_webm_audio called with {} bytes", webm_data.len());
+    println!("📤 Sending {:.2}KB WAV to Groq", audio_data.len() as f32 / 1024.0);
     
-    // Get Groq client first
+    // Get Groq client
     let client = {
         let groq_client = state.groq_client.clone();
         let client_guard = groq_client.lock().map_err(|e| e.to_string())?;
         client_guard.as_ref().ok_or("Groq API key not set")?.clone()
     };
     
-    // Send WebM directly to Groq (it supports WebM format natively)
-    println!("🔥 Sending WebM directly to Groq API (bypassing local processing)");
-    
-    match client.transcribe_audio_bytes(&webm_data, "recording.webm", Some("whisper-large-v3-turbo"), Some("en")).await {
+    match client.transcribe_audio_bytes(&audio_data, "recording.wav", Some("whisper-large-v3-turbo"), Some("en")).await {
         Ok(transcription) => {
-            println!("✅ Groq transcription successful: '{}'", transcription);
+            println!("🎯 === TRANSCRIPTION RESULT ===");
+            println!("📝 Text: {}", transcription);
+            println!("📊 Length: {} characters", transcription.len());
+            println!("🎯 ===========================");
             Ok(transcription)
         }
         Err(e) => {
@@ -133,6 +142,68 @@ async fn get_active_window_info(state: State<'_, AppState>) -> Result<WindowInfo
     Ok(window_info)
 }
 
+#[tauri::command]
+async fn copy_to_clipboard(text: String) -> Result<String, String> {
+    use std::process::Command;
+    
+    println!("📋 DEV TIER: Native clipboard copy for {} chars", text.len());
+    
+    // Try multiple clipboard methods for maximum compatibility
+    
+    // Method 1: wl-copy for Wayland
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        match Command::new("wl-copy")
+            .arg(&text)
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                println!("✅ Clipboard: wl-copy success");
+                return Ok("Copied via wl-copy".to_string());
+            }
+            Ok(_) => println!("❌ wl-copy failed"),
+            Err(_) => println!("❌ wl-copy not available"),
+        }
+    }
+    
+    // Method 2: xclip for X11
+    let mut cmd = Command::new("xclip");
+    cmd.args(&["-selection", "clipboard"]);
+    cmd.stdin(std::process::Stdio::piped());
+    
+    match cmd.spawn() {
+        Ok(mut child) => {
+            if let Some(stdin) = child.stdin.as_mut() {
+                use std::io::Write;
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            match child.wait() {
+                Ok(status) if status.success() => {
+                    println!("✅ Clipboard: xclip success");
+                    return Ok("Copied via xclip".to_string());
+                }
+                _ => println!("❌ xclip process failed"),
+            }
+        }
+        Err(_) => println!("❌ xclip not available"),
+    }
+    
+    // Method 3: xsel fallback
+    match Command::new("xsel")
+        .args(&["--clipboard", "--input"])
+        .arg(&text)
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            println!("✅ Clipboard: xsel success");
+            return Ok("Copied via xsel".to_string());
+        }
+        Ok(_) => println!("❌ xsel failed"),
+        Err(_) => println!("❌ xsel not available"),
+    }
+    
+    Err("All native clipboard methods failed - install wl-clipboard or xclip".to_string())
+}
+
 // Audio thread no longer needed - using browser MediaRecorder
 
 // Apply Linux graphics fix for blank screen issue
@@ -167,6 +238,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new()
             .target(tauri_plugin_log::Target::new(
                 tauri_plugin_log::TargetKind::Stdout,
@@ -179,14 +251,43 @@ pub fn run() {
             start_groq_recording,
             stop_groq_recording,
             is_recording,
+            get_audio_levels,
             set_groq_api_key,
-            process_webm_audio,
+            transcribe_audio,
             inject_text,
-            get_active_window_info
+            get_active_window_info,
+            copy_to_clipboard
         ])
-        .setup(|_app| {
+        .setup(|app| {
             // NO devtools auto-open - clean desktop app experience
             println!("🚀 AquaVoice starting up...");
+            
+            // Register global Ctrl+Shift+, hotkey for voice recording
+            use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+            
+            let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Comma);
+            
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |app, _shortcut, event| {
+                        println!("🎤 Global Ctrl+Shift+, pressed! Event: {:?}", event);
+                        
+                        // Trigger on any event (pressed/released doesn't matter)
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            
+                            // Trigger recording start via frontend
+                            let _ = window.eval("window.startGlobalRecording && window.startGlobalRecording()");
+                        }
+                    })
+                    .build(),
+            )?;
+            
+            // Register the shortcut
+            app.global_shortcut().register(shortcut)?;
+            println!("✅ Global Ctrl+Shift+, hotkey registered!");
+            
             Ok(())
         })
         .run(tauri::generate_context!())
