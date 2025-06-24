@@ -1,6 +1,6 @@
-# 🎙️ maVoice
-
 <div align="center">
+
+# 🎙️ maVoice
   <img src="https://img.shields.io/badge/Powered%20by-Groq-FF6B6B?style=for-the-badge&logo=lightning&logoColor=white" alt="Powered by Groq">
   <img src="https://img.shields.io/badge/Model-Whisper%20Turbo-4ECDC4?style=for-the-badge&logo=openai&logoColor=white" alt="Whisper Turbo">
   <img src="https://img.shields.io/badge/Built%20with-Tauri-FFC107?style=for-the-badge&logo=rust&logoColor=black" alt="Built with Tauri">
