@@ -54,7 +54,7 @@ impl GroqClient {
         model: Option<&str>,
         language: Option<&str>,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
-        let model = model.unwrap_or("whisper-large-v3");
+        let model = model.unwrap_or("whisper-large-v3-turbo");
 
         // Read the audio file
         let mut file = File::open(file_path)?;
