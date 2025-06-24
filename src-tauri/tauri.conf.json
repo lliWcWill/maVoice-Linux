@@ -12,23 +12,28 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "label": "main",
+        "label": "main", 
         "title": "AquaVoice",
-        "width": 80,
-        "height": 80,
-        "resizable": true,
+        "width": 72,
+        "height": 20,
+        "resizable": false,
         "fullscreen": false,
         "alwaysOnTop": true,
         "decorations": false,
         "transparent": true,
         "center": false,
-        "x": 100,
-        "y": 100,
+        "x": 300,
+        "y": 800,
         "skipTaskbar": true,
         "visible": true,
         "acceptFirstMouse": true,
         "titleBarStyle": "Transparent",
-        "shadow": false
+        "shadow": false,
+        "focus": true,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "dragDropEnabled": true
       }
     ],
     "security": {
