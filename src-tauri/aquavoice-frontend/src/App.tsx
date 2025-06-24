@@ -30,7 +30,11 @@ if (isTauri) {
 }
 
 // Groq API configuration - Use environment variable or prompt user
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || 'YOUR_NEW_API_KEY_HERE';
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+
+if (!GROQ_API_KEY) {
+  throw new Error('Missing VITE_GROQ_API_KEY environment variable');
+}
 
 // Removed unused MediaRecorderState interface
 

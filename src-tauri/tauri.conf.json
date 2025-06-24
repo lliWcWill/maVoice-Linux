@@ -1,7 +1,7 @@
 {
-  "productName": "AquaVoice Linux",
+  "productName": "maVoice",
   "version": "0.1.0",
-  "identifier": "com.aquavoice.linux",
+  "identifier": "com.mavoice.app",
   "build": {
     "beforeDevCommand": "cd src-tauri/aquavoice-frontend && npm run dev -- --port 5173",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main", 
-        "title": "AquaVoice",
+        "title": "maVoice",
         "width": 72,
         "height": 20,
         "resizable": false,
