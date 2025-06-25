@@ -71,7 +71,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/maVoice.git
+git clone https://github.com/lliWcWill/maVoice.git
 cd maVoice
 
 # Install dependencies
