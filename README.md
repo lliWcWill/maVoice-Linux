@@ -71,6 +71,139 @@ Normal State           Recording            Processing           Success
 
 ## 🚀 Quick Start
 
+### 🌟 **RECOMMENDED: WSL2 Setup (Windows Users)**
+
+**✨ BREAKTHROUGH: WSL2 + WSLg provides PERFECT voice dictation with zero audio issues!**
+
+<details>
+<summary><b>🪟 WSL2 Setup - THE BEST WAY (Recommended for Windows)</b></summary>
+
+**Why WSL2 is SUPERIOR to native Windows:**
+- ✅ **ZERO audio configuration issues** (no WASAPI problems)
+- ✅ **Native Linux performance** with Windows GUI
+- ✅ **Perfect microphone integration** through WSLg
+- ✅ **Flawless clipboard integration** (no Windows API headaches)
+- ✅ **Instant setup** - no Visual Studio Build Tools needed!
+
+#### Prerequisites
+
+1. **Update WSL2** (from Windows PowerShell as Administrator):
+   ```powershell
+   wsl --update
+   wsl --version  # Ensure version 2 with WSLg
+   ```
+
+2. **Install Debian/Ubuntu** if you don't have it:
+   ```powershell
+   wsl --install -d Debian
+   ```
+
+#### 🎯 **FOOLPROOF Setup (5 minutes!)**
+
+**💡 COPY-PASTE EACH BLOCK SEPARATELY FOR SUCCESS:**
+
+**Step 1: Install Rust (Required)**
+```bash
+# In your WSL2 terminal - paste and press Enter
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+**⚠️ When prompted, press `1` then Enter to proceed with default installation**
+```bash
+# Restart your shell or run this:
+source $HOME/.cargo/env
+```
+
+**Step 2: Install System Dependencies (One Line)**
+```bash
+# Copy-paste this ENTIRE block as one command:
+sudo apt update && sudo apt install -y \
+    build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+    libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libdbus-1-dev \
+    libappindicator3-dev librsvg2-dev libasound2-dev \
+    xdotool wl-clipboard wtype
+```
+**⚠️ Enter your password when prompted**
+
+**Step 3: Clone & Install (AUTOMATED)**
+```bash
+git clone https://github.com/Cwilliams333/maVoice-Enhanced.git
+cd maVoice-Enhanced
+./install.sh
+```
+**✅ This installs ALL npm dependencies automatically!**
+
+**Step 4: Add Your Groq API Key**
+```bash
+# Replace "your_groq_api_key_here" with your ACTUAL key from console.groq.com
+echo "VITE_GROQ_API_KEY=your_groq_api_key_here" > src-tauri/aquavoice-frontend/.env
+```
+
+**Step 5: Launch maVoice!**
+```bash
+npm run dev
+```
+**🎉 Look for a tiny floating widget at position (300, 800) on your screen!**
+
+#### 🚨 **COMMON PITFALLS (READ THIS TO AVOID PAIN!)** 
+
+**❌ "I don't see the widget!"**
+- It's TINY (72x20px) - look carefully around coordinates (300, 800)
+- Check if `npm run dev` shows errors - if so, something failed above
+
+**❌ "Permission denied during sudo apt install"**
+- You need to enter your WSL2 password (it won't show characters as you type)
+
+**❌ "Rust installation failed"**
+- Restart your terminal after installing Rust: `source $HOME/.cargo/env`
+
+**❌ "My API key doesn't work"**
+- Get it from [console.groq.com](https://console.groq.com) (must start with `gsk_`)
+- Replace `your_groq_api_key_here` with your ACTUAL key
+
+**❌ "No audio recording"**
+- Make sure your microphone isn't being used by another app
+- WSL2 + WSLg handles audio automatically - no extra config needed!
+
+---
+
+**🎯 What you'll see when it works:**
+- A tiny floating widget (72x20px) appears on your Windows desktop
+- **Right-click + drag** to move it anywhere
+- **Double-click** to start recording
+- **Single-click** to stop and get instant transcription
+- Text automatically copied to Windows clipboard!
+
+#### ✅ **SUCCESS VALIDATION CHECKLIST**
+
+**After running `npm run dev`, verify these work:**
+
+1. **Widget appears** ✓
+   - Look for tiny floating button at (300, 800)
+   - Says "🎤 TALK" in blue
+
+2. **Recording works** ✓ 
+   - Double-click widget → turns red with moving bars
+   - Speak for 2-3 seconds
+   - Single-click to stop → turns orange then green
+
+3. **Transcription works** ✓
+   - Your speech appears as text 
+   - Text automatically copied to clipboard
+   - Paste (Ctrl+V) in any Windows app to verify
+
+4. **Dragging works** ✓
+   - Right-click + drag moves the widget anywhere
+
+**🎉 If all 4 work, you're GOOD TO GO!**
+
+#### Why This Works So Well
+- **WSLg magic**: Linux app appears as native Windows app
+- **Audio perfection**: Linux ALSA handles microphone flawlessly  
+- **Zero configuration**: No Windows audio driver headaches
+- **Best performance**: Native Linux speed with Windows convenience
+
+</details>
+
 ### Platform Setup Guides
 
 <details>
@@ -152,8 +285,8 @@ sudo pacman -S --needed \
 git clone https://github.com/lliWcWill/maVoice-Linux.git
 cd maVoice-Linux
 
-# 2. Install Node dependencies
-npm install
+# 2. Run automated installer
+./install.sh
 
 # 3. Configure API key
 echo "VITE_GROQ_API_KEY=your_groq_api_key_here" > src-tauri/aquavoice-frontend/.env
@@ -169,7 +302,19 @@ npm run build
 </details>
 
 <details>
-<summary><b>🪟 WSL2 Setup (Windows Subsystem for Linux)</b></summary>
+<summary><b>⚠️ Native Windows Setup (Not Recommended - Use WSL2 Instead)</b></summary>
+
+**🚨 WARNING: Native Windows has known issues:**
+- ❌ **WASAPI audio problems** (microphone conflicts)
+- ❌ **Complex setup** (Visual Studio Build Tools required)
+- ❌ **Audio driver conflicts** with other applications  
+- ❌ **Clipboard integration issues**
+- ❌ **Performance overhead**
+
+**👆 USE WSL2 SETUP ABOVE INSTEAD!** It solves all these problems.
+
+<details>
+<summary><b>🪟 WSL2 Setup (Legacy - Superseded by Enhanced WSL2 Above)</b></summary>
 
 #### Prerequisites
 
