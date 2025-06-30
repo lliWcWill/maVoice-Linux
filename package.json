@@ -2,16 +2,23 @@
   "name": "mavoice",
   "version": "0.1.0",
   "type": "module",
+  "private": true,
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
-  },
-  "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "build": "tauri build",
+    "frontend:dev": "cd src-tauri/aquavoice-frontend && npm run dev",
+    "frontend:build": "cd src-tauri/aquavoice-frontend && npm run build",
+    "frontend:install": "cd src-tauri/aquavoice-frontend && npm install",
+    "install:all": "npm install && npm run frontend:install",
+    "lint": "cd src-tauri/aquavoice-frontend && npm run lint",
+    "clean": "rm -rf node_modules src-tauri/aquavoice-frontend/node_modules target"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
     "groq-sdk": "^0.25.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
   }
 }

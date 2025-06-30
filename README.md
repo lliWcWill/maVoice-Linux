@@ -1,15 +1,22 @@
 <div align="center">
 
 # 🎙️ maVoice
-  <img src="https://img.shields.io/badge/Powered%20by-Groq-FF6B6B?style=for-the-badge&logo=lightning&logoColor=white" alt="Powered by Groq">
-  <img src="https://img.shields.io/badge/Model-Whisper%20Turbo-4ECDC4?style=for-the-badge&logo=openai&logoColor=white" alt="Whisper Turbo">
-  <img src="https://img.shields.io/badge/Built%20with-Tauri-FFC107?style=for-the-badge&logo=rust&logoColor=black" alt="Built with Tauri">
-  <img src="https://img.shields.io/badge/License-MIT-45B7D1?style=for-the-badge&logo=opensource&logoColor=white" alt="MIT License">
-</div>
 
-<div align="center">
-  <h3>🚀 Open-Source Voice Dictation Powered by Groq's Lightning-Fast Inference</h3>
-  <p>Experience the future of voice-to-text with <strong>Groq DEV Tier</strong> - Ultra-fast transcription that leaves OpenAI's free tier in the dust!</p>
+<img src="https://img.shields.io/badge/Powered%20by-Groq-FF6B6B?style=for-the-badge&logo=lightning&logoColor=white" alt="Powered by Groq">
+<img src="https://img.shields.io/badge/Model-Whisper%20Turbo-4ECDC4?style=for-the-badge&logo=openai&logoColor=white" alt="Whisper Turbo">
+<img src="https://img.shields.io/badge/Built%20with-Tauri-FFC107?style=for-the-badge&logo=rust&logoColor=black" alt="Built with Tauri">
+<img src="https://img.shields.io/badge/License-MIT-45B7D1?style=for-the-badge&logo=opensource&logoColor=white" alt="MIT License">
+
+<h3>🚀 Open-Source Voice Dictation Powered by Groq's Lightning-Fast Inference</h3>
+<p>Experience the future of voice-to-text with <strong>Groq DEV Tier</strong> - Ultra-fast transcription that leaves OpenAI's free tier in the dust!</p>
+
+```
+┌─────────────────┐
+│  🎤 maVoice     │  ← Tiny floating widget (100x22px)
+│ ▶ ■ ▪ ▪ ▪ ▪    │    Always on top of your screen
+└─────────────────┘    Double-click to start!
+```
+
 </div>
 
 ---
@@ -18,7 +25,7 @@
 
 - **⚡ Blazing Fast**: Powered by Groq's Whisper Large v3 Turbo model - the fastest inference in the game
 - **🎯 Native Performance**: Built with Rust and Tauri for minimal resource usage
-- **🎨 Beautiful UI**: Sleek, modern interface that stays out of your way
+- **🎨 Beautiful UI**: Sleek, modern floating widget that stays out of your way
 - **🔒 Privacy First**: Your API key, your data - everything stays local
 - **🌐 Cross-Platform**: Works on Linux (Windows and macOS coming soon!)
 - **🎤 Smart Recording**: Real-time audio visualization and voice detection
@@ -26,6 +33,24 @@
 - **⚙️ Advanced Settings**: Comprehensive configuration panel with model selection
 - **🎛️ Intuitive Controls**: Double-click to start, single-click to stop
 - **🌍 Multi-Language**: Support for 100+ languages with custom prompts
+
+## 🎯 What is maVoice?
+
+maVoice is a **floating voice dictation widget** that lives on your desktop. Unlike traditional apps with windows and menus, maVoice is a tiny, always-accessible button that floats above your other applications.
+
+### The Floating Widget Design
+
+```
+Normal State           Recording            Processing           Success
+┌─────────────┐       ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ 🎤 maVoice  │  →    │ 🔴 ▶▶▶▶     │  →  │ 🟠 ◈◈◈◈◈    │  →  │ ✅ Done!    │
+└─────────────┘       └─────────────┘     └─────────────┘     └─────────────┘
+   (Blue)                 (Red)              (Orange)            (Green)
+```
+
+- **Size**: 100x22 pixels (compact floating button)
+- **Behavior**: Always on top, transparent background, no window borders
+- **Dragging**: Right-click or Ctrl+Left-click to drag to a new position
 
 ## 🏎️ Why Groq DEV Tier?
 
@@ -61,31 +86,85 @@
 
 ## 🚀 Quick Start
 
+### 🌟 **ONE-COMMAND Install**
+
+```bash
+# Clone and install everything automatically
+git clone https://github.com/lliWcWill/maVoice-Linux.git
+cd maVoice-Linux
+./install.sh
+
+# Add your Groq API key
+echo "VITE_GROQ_API_KEY=your_groq_api_key_here" > src-tauri/aquavoice-frontend/.env
+
+# Launch!
+npm run dev
+```
+
 ### Prerequisites
 
 - Node.js 18+
 - Rust 1.70+
 - A Groq API key ([Get one here](https://console.groq.com))
 
-### Installation
+### Platform-Specific Setup
+
+<details>
+<summary><b>🪟 WSL2 Setup (Windows Users)</b></summary>
+
+**✨ BREAKTHROUGH: WSL2 + WSLg provides PERFECT voice dictation with zero audio issues!**
+
+#### Prerequisites
+
+1. **Update WSL2** (from Windows PowerShell as Administrator):
+   ```powershell
+   wsl --update
+   wsl --version  # Ensure version 2 with WSLg
+   ```
+
+2. **Install Debian/Ubuntu** if you don't have it:
+   ```powershell
+   wsl --install -d Debian
+   ```
+
+#### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/maVoice.git
-cd maVoice
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
 
-# Install dependencies
-npm install
+# Install system dependencies
+sudo apt update && sudo apt install -y \
+    build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+    libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libdbus-1-dev \
+    libappindicator3-dev librsvg2-dev libasound2-dev \
+    xdotool wl-clipboard wtype
 
-# Set up your Groq API key
-echo "VITE_GROQ_API_KEY=your_groq_api_key_here" > src-tauri/aquavoice-frontend/.env
-
-# Run in development mode
-npm run dev
-
-# Build for production
-npm run build
+# Clone and run
+git clone https://github.com/lliWcWill/maVoice-Linux.git
+cd maVoice-Linux
+./install.sh
 ```
+
+</details>
+
+<details>
+<summary><b>🐧 Native Linux Setup</b></summary>
+
+**Debian/Ubuntu:**
+```bash
+sudo apt update
+sudo apt install -y \
+    build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+    libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libdbus-1-dev \
+    libappindicator3-dev librsvg2-dev libasound2-dev \
+    xdotool wl-clipboard wtype
+```
+
+**Fedora/Arch** - See [detailed instructions](QUICK_REFERENCE.md)
+
+</details>
 
 ### 📦 Build Debian Package
 
