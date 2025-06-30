@@ -1,0 +1,575 @@
+/* Reset and base styles for true floating */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* =================================================================
+   🎨 MODERN VOICE RECORDING BUTTON STYLES - 5 VARIATIONS
+   Based on 2024 UI trends: Apple Liquid Glass, Glassmorphism, etc.
+   ================================================================= */
+
+/* 🔧 Common base - smaller 25% size (96x27) */
+.island-button {
+  border: none;
+  cursor: pointer;
+  position: relative;
+  font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* =================================================================
+   🌟 STYLE 1: APPLE LIQUID GLASS (Dynamic Island Inspired)
+   ================================================================= */
+.island-button.style1 {
+  background: linear-gradient(135deg, 
+    rgba(0, 0, 0, 0.95) 0%, 
+    rgba(20, 20, 20, 0.9) 50%, 
+    rgba(0, 0, 0, 0.95) 100%);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.1) inset,
+    0 0 0 0.5px rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.island-button.style1:hover {
+  transform: scale(1.05) translateY(-2px);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.15) inset,
+    0 0 0 0.5px rgba(255, 255, 255, 0.1);
+}
+
+.island-button.style1.recording {
+  background: linear-gradient(135deg, 
+    rgba(255, 69, 58, 0.95) 0%, 
+    rgba(255, 59, 48, 0.9) 50%, 
+    rgba(255, 69, 58, 0.95) 100%);
+  animation: liquid-glass-pulse 2s ease-in-out infinite;
+}
+
+.island-button.style1.processing {
+  background: linear-gradient(135deg, 
+    rgba(255, 159, 10, 0.95) 0%, 
+    rgba(255, 149, 0, 0.9) 50%, 
+    rgba(255, 159, 10, 0.95) 100%);
+  animation: liquid-glass-process 1.5s ease-in-out infinite;
+}
+
+/* =================================================================
+   🔮 STYLE 2: PURE GLASSMORPHISM (Frosted Glass Effect)
+   ================================================================= */
+.island-button.style2 {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(40px) brightness(1.1);
+  -webkit-backdrop-filter: blur(40px) brightness(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 
+    0 8px 32px rgba(31, 38, 135, 0.37),
+    0 2px 16px rgba(31, 38, 135, 0.2) inset;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.island-button.style2:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transform: scale(1.08) translateY(-3px);
+  box-shadow: 
+    0 16px 48px rgba(31, 38, 135, 0.5),
+    0 4px 20px rgba(255, 255, 255, 0.1) inset;
+}
+
+.island-button.style2.recording {
+  background: rgba(255, 69, 58, 0.3);
+  border: 1px solid rgba(255, 69, 58, 0.5);
+  animation: glass-record-glow 1.8s ease-in-out infinite;
+}
+
+.island-button.style2.processing {
+  background: rgba(255, 159, 10, 0.3);
+  border: 1px solid rgba(255, 159, 10, 0.5);
+  animation: glass-process-shimmer 1.5s ease-in-out infinite;
+}
+
+/* =================================================================
+   ⚡ STYLE 3: ENHANCED NEON GLOW (Your Favorite!)
+   ================================================================= */
+.island-button.style3 {
+  background: rgba(8, 8, 12, 0.95);
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  box-shadow: 
+    0 0 3px rgba(0, 255, 255, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.9) inset;
+  color: rgba(0, 255, 255, 0.7);
+  text-shadow: 0 0 3px rgba(0, 255, 255, 0.2);
+  transition: all 0.05s linear;
+  position: relative;
+  overflow: visible;
+  transform: scale(1);
+  /* INSTANT ANIMATION RESET */
+  animation: none;
+  animation-duration: 0s;
+  animation-fill-mode: none;
+  /* KILL BROWSER DEFAULT STYLES */
+  outline: none !important;
+  outline-offset: 0 !important;
+  outline-width: 0 !important;
+}
+
+/* KILL ALL BROWSER FOCUS AND ACTIVE STATES */
+.island-button.style3:focus,
+.island-button.style3:active,
+.island-button.style3:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  outline-width: 0 !important;
+  border: 1px solid rgba(0, 255, 255, 0.2) !important;
+  box-shadow: 
+    0 0 3px rgba(0, 255, 255, 0.1) !important,
+    0 2px 8px rgba(0, 0, 0, 0.9) inset !important;
+}
+
+/* NUCLEAR READY STATE - INSTANT RESET WITH MAXIMUM SPECIFICITY */
+.island-button.style3.ready,
+.island-button.style3.ready:not(.recording),
+.island-button.style3.ready:not(.processing),
+.island-button.style3.ready:not(.recording):not(.processing),
+.island-button.style3:not(.recording):not(.processing),
+body .island-button.style3.ready,
+body .island-button.style3:not(.recording),
+html body .island-button.style3.ready,
+html body .island-button.style3:not(.recording) {
+  border: 1px solid rgba(0, 255, 255, 0.2) !important;
+  /* KILL RED RING - FORCE BLUE BOX SHADOW ONLY */
+  box-shadow: 
+    0 0 3px rgba(0, 255, 255, 0.1) !important,
+    0 2px 8px rgba(0, 0, 0, 0.9) inset !important,
+    0 0 0 0px transparent !important;
+  color: rgba(0, 255, 255, 0.7) !important;
+  text-shadow: 0 0 3px rgba(0, 255, 255, 0.2) !important;
+  /* FORCE KILL ALL ANIMATIONS IMMEDIATELY */
+  animation: none !important;
+  animation-name: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 0 !important;
+  animation-play-state: paused !important;
+  animation-fill-mode: none !important;
+  /* INSTANT TRANSITION FOR IMMEDIATE RESET */
+  transition: all 0s linear !important;
+  transform: scale(1) !important;
+  filter: none !important;
+}
+
+/* REMOVED THE STUPID BLUE OVERRIDE - MY BAD BRO! */
+
+/* FORCE KILL ALL GLOWS */
+.island-button.style3.ready *,
+.island-button.style3:not(.recording) *,
+.island-button.style3:not(.processing) * {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+/* EMERGENCY GLOW KILLER - CLEAN MINIMAL STATE */
+.island-button.style3.ready,
+.island-button.style3:not(.recording),
+.island-button.style3:not(.processing) {
+  /* Minimal clean design */
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(8, 8, 12, 0.95) !important;
+  /* NO GLOWS AT ALL */
+  box-shadow: none !important;
+  /* Kill all animations immediately */
+  animation: none !important;
+  animation-name: none !important;
+  animation-duration: 0s !important;
+  animation-fill-mode: none !important;
+  /* Force instant transition */
+  transition: all 0.1s linear !important;
+  /* Remove any lingering effects */
+  filter: none !important;
+  backdrop-filter: none !important;
+  text-shadow: none !important;
+}
+
+/* Minimal hover - no glows */
+.island-button.style3:hover:not(.recording):not(.processing) {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 1);
+  text-shadow: none;
+  transform: scale(1.02);
+  transition: all 0.2s ease-out;
+}
+
+/* FUCK THE RED RING - SIMPLE CLEAN RECORDING STATE */
+.island-button.style3.recording:not(.ready),
+body .island-button.style3.recording:not(.ready) {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important; /* SAME AS NORMAL */
+  color: rgba(255, 50, 50, 0.9) !important; /* ONLY RED TEXT */
+  text-shadow: 0 0 4px rgba(255, 50, 50, 0.3) !important; /* SUBTLE RED GLOW ON TEXT */
+  box-shadow: 
+    0 0 3px rgba(0, 255, 255, 0.1) !important, /* SAME AS READY STATE */
+    0 2px 8px rgba(0, 0, 0, 0.9) inset !important;
+  animation: none !important; /* NO BREATHING BULLSHIT */
+  transition: all 0.1s ease-out !important;
+}
+
+/* INSTANT KILL SWITCH - HIGHEST POSSIBLE SPECIFICITY */
+body html .island-button.style3.ready {
+  border: 1px solid rgba(0, 255, 255, 0.2) !important;
+  color: rgba(0, 255, 255, 0.7) !important;
+  text-shadow: none !important;
+  box-shadow: 
+    0 0 3px rgba(0, 255, 255, 0.1) !important,
+    0 2px 8px rgba(0, 0, 0, 0.9) inset !important;
+  animation: none !important;
+  animation-name: none !important;
+  animation-duration: 0s !important;
+  animation-iteration-count: 0 !important;
+  animation-play-state: paused !important;
+  transform: scale(1) !important;
+  transition: none !important;
+}
+
+/* FORCE READY STATE TO OVERRIDE EVERYTHING - HIGHEST SPECIFICITY */
+html body .island-button.style3.ready,
+html body .island-button.style3.ready.recording,
+html body .island-button.style3.ready.processing {
+  border: 1px solid rgba(0, 255, 255, 0.2) !important;
+  color: rgba(0, 255, 255, 0.7) !important;
+  text-shadow: none !important;
+  box-shadow: 
+    0 0 3px rgba(0, 255, 255, 0.1) !important,
+    0 2px 8px rgba(0, 0, 0, 0.9) inset !important;
+  animation: none !important;
+  animation-name: none !important;
+  animation-duration: 0s !important;
+  transform: scale(1) !important;
+  transition: all 0.1s linear !important;
+}
+
+/* NUCLEAR OPTION: Force stop ANY animation on ready state */
+html body .island-button.style3.ready * {
+  animation: none !important;
+  animation-name: none !important;
+  animation-duration: 0s !important;
+}
+
+/* KILL ANIMATION INSTANTLY - NO MATTER WHAT CLASSES EXIST */
+.island-button.style3:not(.recording) {
+  animation: none !important;
+  animation-name: none !important;
+  animation-duration: 0s !important;
+}
+
+/* Processing with energetic flicker */
+.island-button.style3.processing {
+  /* SAME AS READY STATE - NO GLOWS */
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+  animation: none !important;
+  transition: all 0.3s ease-out !important;
+}
+
+/* NO PSEUDO ELEMENTS - CLEAN STATE ALWAYS */
+.island-button.style3::before,
+.island-button.style3::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* =================================================================
+   🕊️ STYLE 4: MINIMAL ZEN (Ultra-Clean like AquaVoice Reference)
+   ================================================================= */
+.island-button.style4 {
+  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.06);
+  color: rgba(60, 60, 60, 0.8);
+  backdrop-filter: none;
+}
+
+.island-button.style4:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 2px 6px rgba(0, 0, 0, 0.08);
+  transform: scale(1.02) translateY(-1px);
+}
+
+.island-button.style4.recording {
+  background: rgba(255, 69, 58, 0.95);
+  color: rgba(255, 255, 255, 0.95);
+  animation: zen-record-breathe 2.5s ease-in-out infinite;
+}
+
+.island-button.style4.processing {
+  background: rgba(255, 159, 10, 0.95);
+  color: rgba(255, 255, 255, 0.95);
+  animation: zen-process-flow 2s ease-in-out infinite;
+}
+
+/* =================================================================
+   🌿 STYLE 5: ORGANIC FLOATING (Soft, Natural Feeling)
+   ================================================================= */
+.island-button.style5 {
+  background: linear-gradient(145deg, 
+    rgba(120, 220, 232, 0.4) 0%, 
+    rgba(69, 162, 158, 0.6) 100%);
+  backdrop-filter: blur(15px) hue-rotate(15deg);
+  -webkit-backdrop-filter: blur(15px) hue-rotate(15deg);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 8px 24px rgba(69, 162, 158, 0.3),
+    0 3px 12px rgba(120, 220, 232, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.island-button.style5:hover {
+  background: linear-gradient(145deg, 
+    rgba(120, 220, 232, 0.6) 0%, 
+    rgba(69, 162, 158, 0.8) 100%);
+  transform: scale(1.06) translateY(-3px) rotate(0.5deg);
+  box-shadow: 
+    0 12px 32px rgba(69, 162, 158, 0.4),
+    0 6px 16px rgba(120, 220, 232, 0.3);
+}
+
+.island-button.style5.recording {
+  background: linear-gradient(145deg, 
+    rgba(255, 138, 128, 0.6) 0%, 
+    rgba(255, 69, 58, 0.8) 100%);
+  animation: organic-record-wave 2.2s ease-in-out infinite;
+}
+
+.island-button.style5.processing {
+  background: linear-gradient(145deg, 
+    rgba(255, 204, 102, 0.6) 0%, 
+    rgba(255, 159, 10, 0.8) 100%);
+  animation: organic-process-morph 1.8s ease-in-out infinite;
+}
+
+/* =================================================================
+   🎬 ANIMATIONS FOR ALL STYLES
+   ================================================================= */
+
+@keyframes liquid-glass-pulse {
+  0%, 100% { 
+    box-shadow: 0 8px 32px rgba(255, 69, 58, 0.4);
+    transform: scale(1);
+  }
+  50% { 
+    box-shadow: 0 12px 48px rgba(255, 69, 58, 0.7);
+    transform: scale(1.04);
+  }
+}
+
+@keyframes liquid-glass-process {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+
+@keyframes glass-record-glow {
+  0%, 100% { 
+    box-shadow: 0 8px 32px rgba(255, 69, 58, 0.3);
+    background: rgba(255, 69, 58, 0.3);
+  }
+  50% { 
+    box-shadow: 0 16px 48px rgba(255, 69, 58, 0.6);
+    background: rgba(255, 69, 58, 0.5);
+  }
+}
+
+@keyframes glass-process-shimmer {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.2); }
+  100% { filter: brightness(1); }
+}
+
+/* TAURI-COMPATIBLE AUDIO VISUALIZER BARS */
+.audio-visualizer-bar {
+  transform-origin: bottom;
+  will-change: transform;
+  -webkit-transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  -webkit-perspective: 1000;
+}
+
+.audio-visualizer-bar.bar-1 {
+  animation: bounce-bar-1 0.5s ease-in-out infinite;
+}
+
+.audio-visualizer-bar.bar-2 {
+  animation: bounce-bar-2 0.6s ease-in-out infinite;
+  animation-delay: -0.15s;
+}
+
+.audio-visualizer-bar.bar-3 {
+  animation: bounce-bar-3 0.7s ease-in-out infinite;
+  animation-delay: -0.3s;
+}
+
+.audio-visualizer-bar.bar-4 {
+  animation: bounce-bar-4 0.8s ease-in-out infinite;
+  animation-delay: -0.45s;
+}
+
+@keyframes bounce-bar-1 {
+  0%, 100% { transform: scaleY(0.3); }
+  25% { transform: scaleY(0.8); }
+  50% { transform: scaleY(0.5); }
+  75% { transform: scaleY(1); }
+}
+
+@keyframes bounce-bar-2 {
+  0%, 100% { transform: scaleY(0.6); }
+  25% { transform: scaleY(1); }
+  50% { transform: scaleY(0.4); }
+  75% { transform: scaleY(0.8); }
+}
+
+@keyframes bounce-bar-3 {
+  0%, 100% { transform: scaleY(0.8); }
+  25% { transform: scaleY(0.5); }
+  50% { transform: scaleY(1); }
+  75% { transform: scaleY(0.6); }
+}
+
+@keyframes bounce-bar-4 {
+  0%, 100% { transform: scaleY(0.4); }
+  25% { transform: scaleY(0.9); }
+  50% { transform: scaleY(0.6); }
+  75% { transform: scaleY(0.3); }
+}
+
+@keyframes neon-processing-energy {
+  0%, 100% { 
+    filter: brightness(1) saturate(1);
+    transform: scale(1);
+  }
+  25% { 
+    filter: brightness(1.2) saturate(1.3);
+    transform: scale(1.02);
+  }
+  50% { 
+    filter: brightness(1.4) saturate(1.5);
+    transform: scale(1.03);
+  }
+  75% { 
+    filter: brightness(1.1) saturate(1.2);
+    transform: scale(1.01);
+  }
+}
+
+/* Voice Wave Visualization Rings */
+@keyframes voice-wave-ring-1 {
+  0% {
+    transform: scale(1.0);
+    opacity: 0.6;
+    border-width: 2px;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.3;
+    border-width: 1px;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+    border-width: 0.5px;
+  }
+}
+
+@keyframes voice-wave-ring-2 {
+  0% {
+    transform: scale(1.05);
+    opacity: 0.4;
+    border-width: 1px;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 0.2;
+    border-width: 0.5px;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+    border-width: 0.5px;
+  }
+}
+
+/* Legacy animations for other styles */
+@keyframes neon-record-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(255, 0, 100, 0.4), 0 0 40px rgba(255, 0, 100, 0.2);
+  }
+  50% { 
+    box-shadow: 0 0 40px rgba(255, 0, 100, 0.8), 0 0 80px rgba(255, 0, 100, 0.4);
+  }
+}
+
+@keyframes neon-process-flicker {
+  0%, 100% { opacity: 1; }
+  25% { opacity: 0.8; }
+  50% { opacity: 1; }
+  75% { opacity: 0.9; }
+}
+
+@keyframes zen-record-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+@keyframes zen-process-flow {
+  0% { opacity: 0.9; }
+  50% { opacity: 1; }
+  100% { opacity: 0.9; }
+}
+
+@keyframes organic-record-wave {
+  0%, 100% { 
+    transform: scale(1) rotate(0deg);
+    border-radius: 13.5px;
+  }
+  33% { 
+    transform: scale(1.03) rotate(0.3deg);
+    border-radius: 15px;
+  }
+  66% { 
+    transform: scale(1.01) rotate(-0.2deg);
+    border-radius: 12px;
+  }
+}
+
+@keyframes organic-process-morph {
+  0%, 100% { border-radius: 13.5px; }
+  50% { border-radius: 16px; }
+}

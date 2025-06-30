@@ -1,0 +1,60 @@
+{
+  "productName": "maVoice",
+  "version": "0.1.0",
+  "identifier": "com.mavoice.app",
+  "build": {
+    "beforeDevCommand": "cd src-tauri/aquavoice-frontend && npm run dev -- --port 5173",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "cd src-tauri/aquavoice-frontend && npm run build",
+    "frontendDist": "../src-tauri/aquavoice-frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main", 
+        "title": "maVoice",
+        "width": 72,
+        "height": 20,
+        "resizable": false,
+        "fullscreen": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "center": false,
+        "x": 300,
+        "y": 800,
+        "skipTaskbar": true,
+        "visible": true,
+        "acceptFirstMouse": true,
+        "titleBarStyle": "Transparent",
+        "shadow": false,
+        "focus": true,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.groq.com; media-src 'self' blob: mediastream:; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility"
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}
