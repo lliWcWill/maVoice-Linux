@@ -10,16 +10,10 @@
 <h3>🚀 Open-Source Voice Dictation Powered by Groq's Lightning-Fast Inference</h3>
 <p>Experience the future of voice-to-text with <strong>Groq DEV Tier</strong> - Ultra-fast transcription that leaves OpenAI's free tier in the dust!</p>
 
-```
-┌─────────────────┐
-│  🎤 maVoice     │  ← Tiny floating widget (100x22px)
-│ ▶ ■ ▪ ▪ ▪ ▪    │    Always on top of your screen
-└─────────────────┘    Double-click to start!
-```
-
-</div>
+</div>                                                          
 
 ---
+
 
 ## ✨ Features
 
@@ -43,7 +37,7 @@ maVoice is a **floating voice dictation widget** that lives on your desktop. Unl
 ```
 Normal State           Recording            Processing           Success
 ┌─────────────┐       ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ 🎤 maVoice  │  →    │ 🔴 ▶▶▶▶     │  →  │ 🟠 ◈◈◈◈◈    │  →  │ ✅ Done!    │
+│ 🎤 maVoice │  →     │ 🔴 ▶▶▶▶  │  →  │ 🟠 ◈◈◈◈◈ │  →  │ ✅ Done!   │
 └─────────────┘       └─────────────┘     └─────────────┘     └─────────────┘
    (Blue)                 (Red)              (Orange)            (Green)
 ```
