@@ -7,18 +7,33 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId, WindowLevel};
 
+use serde_json::json;
+
 use crate::api::gemini::{FunctionCall, FunctionResponse, GeminiEvent};
 use crate::api::{GeminiLiveClient, GroqClient};
 use crate::audio::{AudioPlayer, GroqRecorder};
+use crate::dashboard::DashboardBroadcaster;
 
 /// Global storage for the Gemini client (needed because it's created in an async task
 /// but used from the winit event loop thread). Protected by Mutex.
 static GEMINI_CLIENT: std::sync::LazyLock<Mutex<Option<GeminiLiveClient>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
+
+/// Global storage for the dashboard broadcast server.
+static DASHBOARD: std::sync::LazyLock<Mutex<Option<DashboardBroadcaster>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
 use crate::config::Config;
 use crate::renderer::{AiUniforms, GpuContext, Renderer, UserUniforms};
 use crate::state_machine::{OverlayState, VisualState};
 use crate::system::{HotkeyManager, TextInjector};
+
+/// Current time as Unix milliseconds (for dashboard event timestamps).
+fn now_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
 
 /// Voice mode — determines hotkey behavior.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -198,6 +213,7 @@ impl App {
         };
 
         self.visual.set_state(OverlayState::Processing);
+        self.broadcast_dashboard("groq:start", json!({ "timestamp": now_ms() }));
 
         // Spawn async transcription on tokio runtime
         let client = self.groq_client.clone();
@@ -446,6 +462,13 @@ impl App {
             w.request_redraw();
         }
     }
+
+    /// Broadcast a JSON event to connected dashboard clients.
+    fn broadcast_dashboard(&self, event_type: &str, payload: serde_json::Value) {
+        if let Some(ref server) = *DASHBOARD.lock().unwrap() {
+            server.broadcast(event_type, payload);
+        }
+    }
 }
 
 impl ApplicationHandler<AppEvent> for App {
@@ -547,6 +570,16 @@ impl ApplicationHandler<AppEvent> for App {
             "Windows created: user={}x{} (bottom), AI={}x{} (top center) on {}x{} screen",
             strip_w, user_h, ai_w, ai_h, screen_w, screen_h
         );
+
+        // Start dashboard WebSocket broadcast server
+        self.tokio_rt.spawn(async {
+            match DashboardBroadcaster::start(3001).await {
+                Ok(server) => {
+                    DASHBOARD.lock().unwrap().replace(server);
+                }
+                Err(e) => log::warn!("[Dashboard] Failed to start: {}", e),
+            }
+        });
     }
 
     fn window_event(
@@ -764,11 +797,19 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::TranscriptionComplete(text) => {
+                self.broadcast_dashboard("groq:complete", json!({
+                    "text": text,
+                    "timestamp": now_ms(),
+                }));
                 self.handle_transcription_result(text);
                 self.request_redraw_all();
             }
             AppEvent::TranscriptionError(err) => {
                 log::error!("Transcription error: {}", err);
+                self.broadcast_dashboard("groq:error", json!({
+                    "error": err,
+                    "timestamp": now_ms(),
+                }));
                 self.visual.set_state(OverlayState::Idle);
                 self.request_redraw_all();
             }
@@ -778,6 +819,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::GeminiReady => {
                 log::info!("[Gemini] Ready — session established, starting mic");
                 self.gemini_connecting = false;
+                self.broadcast_dashboard("voice:open", json!({ "timestamp": now_ms() }));
                 self.start_gemini_mic();
                 self.request_redraw_all();
             }
@@ -788,6 +830,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 if self.visual.state != OverlayState::AISpeaking {
                     log::info!("[Gemini] AI speaking — audio arriving");
+                    self.broadcast_dashboard("voice:speaking", json!({ "timestamp": now_ms() }));
                     self.visual.set_state(OverlayState::AISpeaking);
                 }
                 self.request_redraw_all();
@@ -795,10 +838,15 @@ impl ApplicationHandler<AppEvent> for App {
 
             AppEvent::GeminiText(text) => {
                 log::info!("[Gemini] Text: {}", text);
+                self.broadcast_dashboard("voice:text", json!({
+                    "text": text,
+                    "timestamp": now_ms(),
+                }));
             }
 
             AppEvent::GeminiInterrupted => {
                 log::info!("[Gemini] Interrupted (barge-in)");
+                self.broadcast_dashboard("voice:interrupted", json!({ "timestamp": now_ms() }));
                 if let Some(ref player) = self.audio_player {
                     player.clear();
                 }
@@ -808,12 +856,22 @@ impl ApplicationHandler<AppEvent> for App {
 
             AppEvent::GeminiTurnComplete => {
                 log::info!("[Gemini] Turn complete — back to listening");
+                self.broadcast_dashboard("voice:listening", json!({ "timestamp": now_ms() }));
                 self.visual.set_state(OverlayState::Listening);
                 self.request_redraw_all();
             }
 
             AppEvent::GeminiToolCall(calls) => {
                 log::info!("[Gemini] Tool calls received: {}", calls.len());
+                let ts = now_ms();
+                for call in &calls {
+                    self.broadcast_dashboard("voice:tool_call", json!({
+                        "chatId": call.id,
+                        "toolName": call.name,
+                        "input": call.args,
+                        "timestamp": ts,
+                    }));
+                }
                 self.dispatch_tool_calls(calls);
             }
 
@@ -832,6 +890,11 @@ impl ApplicationHandler<AppEvent> for App {
                 // Only send response if the call wasn't cancelled
                 if self.pending_tool_calls.remove(&call_id) {
                     log::info!("[Tool] {} completed (id={})", name, call_id);
+                    self.broadcast_dashboard("voice:tool_result", json!({
+                        "chatId": call_id,
+                        "toolName": name,
+                        "timestamp": now_ms(),
+                    }));
                     let response = FunctionResponse {
                         id: call_id,
                         name,
@@ -848,12 +911,20 @@ impl ApplicationHandler<AppEvent> for App {
 
             AppEvent::GeminiError(err) => {
                 log::error!("[Gemini] Error: {}", err);
+                self.broadcast_dashboard("voice:close", json!({
+                    "reason": format!("error: {}", err),
+                    "timestamp": now_ms(),
+                }));
                 self.disconnect_gemini();
                 self.request_redraw_all();
             }
 
             AppEvent::GeminiClosed(reason) => {
                 log::warn!("[Gemini] Session closed: {}", reason);
+                self.broadcast_dashboard("voice:close", json!({
+                    "reason": reason,
+                    "timestamp": now_ms(),
+                }));
                 self.disconnect_gemini();
                 self.request_redraw_all();
             }

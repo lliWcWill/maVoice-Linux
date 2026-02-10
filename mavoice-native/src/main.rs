@@ -2,6 +2,7 @@ mod api;
 mod app;
 mod audio;
 mod config;
+mod dashboard;
 mod renderer;
 mod state_machine;
 mod system;
