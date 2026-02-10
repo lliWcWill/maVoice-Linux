@@ -15,7 +15,7 @@ use crate::audio::{AudioPlayer, GroqRecorder};
 static GEMINI_CLIENT: std::sync::LazyLock<Mutex<Option<GeminiLiveClient>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 use crate::config::Config;
-use crate::renderer::{Renderer, Uniforms};
+use crate::renderer::{AiUniforms, GpuContext, Renderer, UserUniforms};
 use crate::state_machine::{OverlayState, VisualState};
 use crate::system::{HotkeyManager, TextInjector};
 
@@ -55,8 +55,17 @@ struct AltPressState {
 }
 
 pub struct App {
-    window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    // User window (bottom strip) — existing waveform
+    user_window: Option<Arc<Window>>,
+    user_window_id: Option<WindowId>,
+    user_renderer: Option<Renderer>,
+    // AI window (top strip) — Gemini bubble
+    ai_window: Option<Arc<Window>>,
+    ai_window_id: Option<WindowId>,
+    ai_renderer: Option<Renderer>,
+    // Shared GPU context
+    gpu: Option<GpuContext>,
+    // Visual state
     visual: VisualState,
     recorder: Arc<Mutex<GroqRecorder>>,
     groq_client: GroqClient,
@@ -104,8 +113,13 @@ impl App {
         };
 
         Self {
-            window: None,
-            renderer: None,
+            user_window: None,
+            user_window_id: None,
+            user_renderer: None,
+            ai_window: None,
+            ai_window_id: None,
+            ai_renderer: None,
+            gpu: None,
             visual: VisualState::new(),
             recorder: Arc::new(Mutex::new(recorder)),
             groq_client,
@@ -233,9 +247,6 @@ impl App {
     }
 
     // ── Gemini Live methods ──────────────────────────────────────────
-    // Gemini Live is a CONTINUOUS bidirectional session — like a phone call.
-    // One press to connect (mic always live, streaming to Gemini).
-    // One press to disconnect. Both waveforms live simultaneously.
 
     /// True if Gemini session is active (connected or connecting, mic streaming)
     fn gemini_session_active(&self) -> bool {
@@ -382,18 +393,27 @@ impl App {
         self.visual.set_state(OverlayState::Idle);
     }
 
-    fn set_skip_taskbar(_window: &Window) {
+    fn set_skip_taskbar(name: &str) {
         // Use xdotool to set skip-taskbar by window name (works on X11)
-        // This is a post-creation escape hatch since winit doesn't expose atom APIs
         let _ = std::process::Command::new("xdotool")
-            .args(["search", "--name", "maVoice", "set_window", "--skip-taskbar", "1"])
+            .args(["search", "--name", name, "set_window", "--skip-taskbar", "1"])
             .output();
+    }
+
+    /// Request redraw on both windows
+    fn request_redraw_all(&self) {
+        if let Some(w) = &self.user_window {
+            w.request_redraw();
+        }
+        if let Some(w) = &self.ai_window {
+            w.request_redraw();
+        }
     }
 }
 
 impl ApplicationHandler<AppEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if self.user_window.is_some() {
             return;
         }
 
@@ -409,33 +429,76 @@ impl ApplicationHandler<AppEvent> for App {
             .unwrap_or((1920, 1080));
 
         let strip_w = screen_w as f64;
-        let strip_h = 64.0;
 
-        let attrs = Window::default_attributes()
+        // ── Create USER window (bottom, 64px) ──
+        let user_h = 64.0;
+        let user_attrs = Window::default_attributes()
             .with_title("maVoice")
-            .with_inner_size(LogicalSize::new(strip_w, strip_h))
-            .with_position(LogicalPosition::new(0.0, screen_h as f64 - strip_h))
+            .with_inner_size(LogicalSize::new(strip_w, user_h))
+            .with_position(LogicalPosition::new(0.0, screen_h as f64 - user_h))
             .with_decorations(false)
             .with_transparent(true)
             .with_window_level(WindowLevel::AlwaysOnTop)
             .with_resizable(false);
 
-        let window = Arc::new(
+        let user_window = Arc::new(
             event_loop
-                .create_window(attrs)
-                .expect("Failed to create window"),
+                .create_window(user_attrs)
+                .expect("Failed to create user window"),
         );
 
-        Self::set_skip_taskbar(&window);
+        // ── Create AI window (compact floating orb, centered at top) ──
+        let ai_w = 400.0;
+        let ai_h = 200.0;
+        let ai_x = (screen_w as f64 - ai_w) / 2.0;
+        let ai_attrs = Window::default_attributes()
+            .with_title("maVoice-AI")
+            .with_inner_size(LogicalSize::new(ai_w, ai_h))
+            .with_position(LogicalPosition::new(ai_x, 0.0))
+            .with_decorations(false)
+            .with_transparent(true)
+            .with_window_level(WindowLevel::AlwaysOnTop)
+            .with_resizable(false);
 
-        // Init wgpu renderer on tokio runtime (async)
-        let win_clone = window.clone();
-        let renderer = self
+        let ai_window = Arc::new(
+            event_loop
+                .create_window(ai_attrs)
+                .expect("Failed to create AI window"),
+        );
+
+        // ── Init shared GPU context (no surface needed — render to texture) ──
+        let gpu = self
             .tokio_rt
-            .block_on(async { Renderer::new(win_clone).await });
+            .block_on(async { GpuContext::new().await });
 
-        self.renderer = Some(renderer);
-        self.window = Some(window);
+        // ── Create renderers ──
+        let user_renderer = Renderer::new(
+            &gpu,
+            user_window.clone(),
+            include_str!("shader.wgsl"),
+            std::mem::size_of::<UserUniforms>(),
+        );
+
+        let ai_renderer = Renderer::new(
+            &gpu,
+            ai_window.clone(),
+            include_str!("ai_shader.wgsl"),
+            std::mem::size_of::<AiUniforms>(),
+        );
+
+        // Store window IDs for event routing
+        self.user_window_id = Some(user_window.id());
+        self.ai_window_id = Some(ai_window.id());
+
+        self.user_renderer = Some(user_renderer);
+        self.ai_renderer = Some(ai_renderer);
+        self.gpu = Some(gpu);
+        self.user_window = Some(user_window);
+        self.ai_window = Some(ai_window);
+
+        // Skip taskbar for both windows
+        Self::set_skip_taskbar("maVoice");
+        Self::set_skip_taskbar("maVoice-AI");
 
         // Init global hotkeys
         match HotkeyManager::new() {
@@ -444,28 +507,35 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         log::info!(
-            "Window created: {}x{} at bottom of {}x{} screen",
-            strip_w,
-            strip_h,
-            screen_w,
-            screen_h
+            "Windows created: user={}x{} (bottom), AI={}x{} (top center) on {}x{} screen",
+            strip_w, user_h, ai_w, ai_h, screen_w, screen_h
         );
     }
 
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
+        window_id: WindowId,
         event: WindowEvent,
     ) {
+        // Route events by window ID
+        let is_user_window = Some(window_id) == self.user_window_id;
+        let is_ai_window = Some(window_id) == self.ai_window_id;
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
 
             WindowEvent::Resized(size) => {
-                if let Some(r) = &mut self.renderer {
-                    r.resize(size.width, size.height);
+                if is_user_window {
+                    if let Some(r) = &mut self.user_renderer {
+                        r.resize(size.width, size.height);
+                    }
+                } else if is_ai_window {
+                    if let Some(r) = &mut self.ai_renderer {
+                        r.resize(size.width, size.height);
+                    }
                 }
             }
 
@@ -481,38 +551,37 @@ impl ApplicationHandler<AppEvent> for App {
                     .unwrap_or([0.0; 4]);
 
                 // Update visual state with both channels
-                let needs_redraw = self.visual.update_with_output(raw_levels, output_levels);
+                self.visual.update_with_output(raw_levels, output_levels);
 
-                if let Some(r) = &self.renderer {
-                    let size = r.surface_config.width as f32;
-                    let height = r.surface_config.height as f32;
+                let elapsed = self.gpu.as_ref().map(|g| g.elapsed()).unwrap_or(0.0);
 
-                    let uniforms = Uniforms {
-                        resolution: [size, height],
-                        time: r.elapsed(),
-                        intensity: self.visual.effective_intensity(),
-                        levels: self.visual.effective_levels(),
-                        color: self.visual.color,
-                        mode: self.visual.mode,
-                        ai_levels: self.visual.effective_ai_levels(),
-                        ai_color: self.visual.ai_color,
-                        ai_intensity: self.visual.effective_ai_intensity(),
-                    };
+                // ── Render user window ──
+                if is_user_window {
+                    if let Some(r) = &mut self.user_renderer {
+                        let uniforms = UserUniforms {
+                            resolution: [r.width as f32, r.height as f32],
+                            time: elapsed,
+                            intensity: self.visual.effective_intensity(),
+                            levels: self.visual.effective_levels(),
+                            color: self.visual.color,
+                            mode: self.visual.mode,
+                        };
+                        r.render_bytes(bytemuck::bytes_of(&uniforms));
+                    }
+                }
 
-                    match r.render(&uniforms) {
-                        Ok(()) => {}
-                        Err(wgpu::SurfaceError::Lost) => {
-                            let w = r.surface_config.width;
-                            let h = r.surface_config.height;
-                            if let Some(r) = &mut self.renderer {
-                                r.resize(w, h);
-                            }
-                        }
-                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                            log::error!("Out of GPU memory");
-                            event_loop.exit();
-                        }
-                        Err(e) => log::warn!("Render error: {:?}", e),
+                // ── Render AI window ──
+                if is_ai_window {
+                    if let Some(r) = &mut self.ai_renderer {
+                        let uniforms = AiUniforms {
+                            resolution: [r.width as f32, r.height as f32],
+                            time: elapsed,
+                            intensity: self.visual.effective_ai_intensity(),
+                            levels: self.visual.effective_ai_levels(),
+                            color: self.visual.ai_color,
+                            _pad: 0.0,
+                        };
+                        r.render_bytes(bytemuck::bytes_of(&uniforms));
                     }
                 }
 
@@ -522,19 +591,21 @@ impl ApplicationHandler<AppEvent> for App {
                     .as_ref()
                     .map(|p| p.is_playing())
                     .unwrap_or(false);
-                if needs_redraw || self.visual.state != OverlayState::Idle || ai_playing {
-                    if let Some(w) = &self.window {
-                        w.request_redraw();
-                    }
+                if self.visual.state != OverlayState::Idle
+                    || self.visual.intensity > 0.001
+                    || self.visual.ai_intensity > 0.001
+                    || ai_playing
+                {
+                    self.request_redraw_all();
                 }
             }
 
-            // --- Mouse click handling ---
+            // --- Mouse click handling (user window only) ---
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button,
                 ..
-            } => {
+            } if is_user_window => {
                 match button {
                     MouseButton::Left => {
                         if self.is_dragging {
@@ -553,7 +624,7 @@ impl ApplicationHandler<AppEvent> for App {
                     MouseButton::Right => {
                         // Right-click drag
                         self.is_dragging = true;
-                        if let Some(w) = &self.window {
+                        if let Some(w) = &self.user_window {
                             let _ = w.drag_window();
                         }
                     }
@@ -561,28 +632,22 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
 
-            // --- Keyboard handling ---
-            WindowEvent::KeyboardInput { event, .. } => {
+            // --- Keyboard handling (user window only) ---
+            WindowEvent::KeyboardInput { event, .. } if is_user_window => {
                 if event.state != ElementState::Pressed {
                     return;
                 }
 
                 match &event.logical_key {
-                    // Alt+Space → toggle recording
                     Key::Named(NamedKey::Space) => {
-                        // Check if Alt is held by looking at modifiers
-                        // For simplicity, Space alone stops recording
                         if self.is_recording() {
                             self.stop_recording_and_transcribe();
                         }
                     }
-
-                    // Alt key double-press detection
                     Key::Named(NamedKey::Alt) => {
                         self.alt_state.count += 1;
                         self.alt_state.timer = Some(std::time::Instant::now());
                     }
-
                     _ => {}
                 }
             }
@@ -603,10 +668,8 @@ impl ApplicationHandler<AppEvent> for App {
                     if self.is_recording() {
                         self.stop_recording_and_transcribe();
                     }
-                    // Single click while idle with transcript → could copy
                 } else if count >= 2 && !self.is_recording() {
                     self.start_recording();
-                    // Cooldown: ignore clicks for 500ms after starting
                     self.click_state.cooldown_until = Some(
                         std::time::Instant::now() + std::time::Duration::from_millis(500),
                     );
@@ -628,12 +691,9 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Check global hotkeys
-        // Ctrl+Shift+Comma = Groq transcription (push-to-talk, Mode A)
-        // Ctrl+Shift+Period = Gemini Live session toggle (always-on call, Mode B)
         if let Some(ref hk) = self.hotkey_manager {
             let poll = hk.poll();
             if poll.toggle_fired {
-                // Comma = Groq push-to-talk. If Gemini session is active, disconnect first.
                 if self.gemini_session_active() || self.recording_mode == Some(VoiceMode::GeminiLive) {
                     self.disconnect_gemini();
                 }
@@ -642,7 +702,6 @@ impl ApplicationHandler<AppEvent> for App {
                 self.toggle_recording();
             }
             if poll.mode_switch_fired {
-                // Period = Gemini session toggle. If Groq recording active, stop it first.
                 if self.recording_mode == Some(VoiceMode::Groq) && self.is_recording() {
                     let _ = self.recorder.lock().unwrap().stop_recording();
                     self.visual.set_state(OverlayState::Idle);
@@ -658,9 +717,7 @@ impl ApplicationHandler<AppEvent> for App {
             || self.visual.intensity > 0.001
             || self.visual.ai_intensity > 0.001
         {
-            if let Some(w) = &self.window {
-                w.request_redraw();
-            }
+            self.request_redraw_all();
         }
 
         // Reset drag state
@@ -671,16 +728,12 @@ impl ApplicationHandler<AppEvent> for App {
         match event {
             AppEvent::TranscriptionComplete(text) => {
                 self.handle_transcription_result(text);
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
             AppEvent::TranscriptionError(err) => {
                 log::error!("Transcription error: {}", err);
                 self.visual.set_state(OverlayState::Idle);
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
 
             // ── Gemini Live events ──
@@ -688,25 +741,19 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::GeminiReady => {
                 log::info!("[Gemini] Ready — session established, starting mic");
                 self.gemini_connecting = false;
-                // Immediately start mic streaming — this is a live call
                 self.start_gemini_mic();
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
 
             AppEvent::GeminiAudio(pcm_data) => {
                 if let Some(ref player) = self.audio_player {
                     player.enqueue(&pcm_data);
                 }
-                // AI is speaking — both waveforms stay live
                 if self.visual.state != OverlayState::AISpeaking {
                     log::info!("[Gemini] AI speaking — audio arriving");
                     self.visual.set_state(OverlayState::AISpeaking);
                 }
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
 
             AppEvent::GeminiText(text) => {
@@ -718,37 +765,26 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(ref player) = self.audio_player {
                     player.clear();
                 }
-                // Back to listening — mic is still live
                 self.visual.set_state(OverlayState::Listening);
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
 
             AppEvent::GeminiTurnComplete => {
                 log::info!("[Gemini] Turn complete — back to listening");
-                // AI finished speaking — go back to Listening (mic still live!)
-                // NOT idle — the session stays active
                 self.visual.set_state(OverlayState::Listening);
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
 
             AppEvent::GeminiError(err) => {
                 log::error!("[Gemini] Error: {}", err);
                 self.disconnect_gemini();
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
 
             AppEvent::GeminiClosed(reason) => {
                 log::warn!("[Gemini] Session closed: {}", reason);
                 self.disconnect_gemini();
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.request_redraw_all();
             }
         }
     }

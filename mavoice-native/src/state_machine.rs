@@ -89,8 +89,8 @@ impl VisualState {
             OverlayState::Recording | OverlayState::Listening
         );
 
-        // Smooth user audio levels
-        let user_speed = if user_active { 0.18 } else { 0.3 };
+        // Smooth user audio levels — fast attack, moderate decay
+        let user_speed = if user_active { 0.35 } else { 0.2 };
         let user_target = if user_active { raw_levels } else { [0.0; 4] };
         for i in 0..4 {
             self.levels[i] += (user_target[i] - self.levels[i]) * user_speed;
