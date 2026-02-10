@@ -1,89 +1,207 @@
 <div align="center">
 
-# 🎙️ maVoice
+# maVoice
 
-<img src="https://img.shields.io/badge/Powered%20by-Groq-FF6B6B?style=for-the-badge&logo=lightning&logoColor=white" alt="Powered by Groq">
-<img src="https://img.shields.io/badge/Model-Whisper%20Turbo-4ECDC4?style=for-the-badge&logo=openai&logoColor=white" alt="Whisper Turbo">
-<img src="https://img.shields.io/badge/Built%20with-Tauri-FFC107?style=for-the-badge&logo=rust&logoColor=black" alt="Built with Tauri">
-<img src="https://img.shields.io/badge/License-MIT-45B7D1?style=for-the-badge&logo=opensource&logoColor=white" alt="MIT License">
+**AI voice assistant that lives on your desktop**
 
-<h3>🚀 Open-Source Voice Dictation Powered by Groq's Lightning-Fast Inference</h3>
-<p>Experience the future of voice-to-text with <strong>Groq DEV Tier</strong> - Ultra-fast transcription that leaves OpenAI's free tier in the dust!</p>
+<img src="https://img.shields.io/badge/Pure_Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Pure Rust">
+<img src="https://img.shields.io/badge/Gemini_Live-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini Live">
+<img src="https://img.shields.io/badge/Groq_Whisper-10B981?style=for-the-badge&logo=lightning&logoColor=white" alt="Groq Whisper">
+<img src="https://img.shields.io/badge/wgpu_Shaders-FF6B6B?style=for-the-badge&logo=webgpu&logoColor=white" alt="wgpu">
+<img src="https://img.shields.io/badge/License-MIT-45B7D1?style=for-the-badge&logo=opensource&logoColor=white" alt="MIT">
 
-</div>                                                          
+A pure Rust desktop overlay with GPU-rendered visuals, bidirectional voice via Gemini Live, Groq-powered transcription, and a real-time agent dashboard.
+
+</div>
 
 ---
 
+## What is maVoice?
 
-## ✨ Features
+maVoice is a **floating AI voice assistant** rendered directly on your desktop using GPU shaders. No Electron. No WebView. No browser. Just two transparent windows — an animated AI orb and a waveform strip — that sit on top of everything and respond to your voice in real-time.
 
-- **⚡ Blazing Fast**: Powered by Groq's Whisper Large v3 Turbo model - the fastest inference in the game
-- **🎯 Native Performance**: Built with Rust and Tauri for minimal resource usage
-- **🎨 Beautiful UI**: Sleek, modern floating widget that stays out of your way
-- **🔒 Privacy First**: Your API key, your data - everything stays local
-- **🌐 Cross-Platform**: Works on Linux (Windows and macOS coming soon!)
-- **🎤 Smart Recording**: Real-time audio visualization and voice detection
-- **📋 Instant Copy**: Automatic clipboard integration for seamless workflow
-- **⚙️ Advanced Settings**: Comprehensive configuration panel with model selection
-- **🎛️ Intuitive Controls**: Double-click to start, single-click to stop
-- **🌍 Multi-Language**: Support for 100+ languages with custom prompts
+It operates in two modes:
 
-## 🎯 What is maVoice?
+- **Groq mode** — Push-to-talk dictation. Record, transcribe via Groq Whisper, paste to clipboard.
+- **Gemini mode** — Always-on bidirectional voice conversation via Gemini 2.0 Flash Live. The AI can search memory, run shell commands, delegate tasks to Claude, and remember things across sessions.
 
-maVoice is a **floating voice dictation widget** that lives on your desktop. Unlike traditional apps with windows and menus, maVoice is a tiny, always-accessible button that floats above your other applications.
+## Two Versions
 
-### The Floating Widget Design
+This repo contains **two implementations** — the original Tauri/React app and the newer pure Rust native overlay. Both live in the same repo and both work.
+
+| | **mavoice-native** (new) | **src-tauri** (original) |
+|---|---|---|
+| Stack | Pure Rust, wgpu, WGSL shaders | Tauri 2 + React + TypeScript |
+| Rendering | GPU shaders on transparent X11 windows | WebKitGTK floating widget |
+| Voice | Gemini Live bidirectional + Groq STT | Groq STT only |
+| Tools | search_memory, remember, run_command, ask_claude | — |
+| Dashboard | WebSocket broadcast to claudegram | — |
+| UI | AI orb + waveform strip (shader-rendered) | Floating button with settings panel |
+| Size | ~5MB static binary | ~50MB (Tauri + WebKitGTK) |
+
+The **native version** (`mavoice-native/`) is the active development target. The **Tauri version** (`src-tauri/`) remains in the repo as a fully functional alternative — useful if you want the settings UI, web-based configuration panel, or prefer the widget-style interface.
+
+## Architecture (Native)
 
 ```
-Normal State           Recording            Processing           Success
-┌─────────────┐       ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ 🎤 maVoice │  →     │ 🔴 ▶▶▶▶  │  →  │ 🟠 ◈◈◈◈◈ │  →  │ ✅ Done!   │
-└─────────────┘       └─────────────┘     └─────────────┘     └─────────────┘
-   (Blue)                 (Red)              (Orange)            (Green)
+┌──────────────────────────────────────────────────────┐
+│  mavoice-native (pure Rust binary)                   │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐ │
+│  │ wgpu/WGSL│  │ cpal     │  │ Gemini Live (WS)   │ │
+│  │ renderer │  │ audio    │  │ bidirectional voice │ │
+│  │ 2 windows│  │ capture  │  │ + function calling  │ │
+│  └──────────┘  └──────────┘  └────────────────────┘ │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐ │
+│  │ Groq API │  │ Global   │  │ Dashboard WS       │ │
+│  │ Whisper  │  │ Hotkeys  │  │ broadcast (3001)   │ │
+│  │ STT      │  │ F2 / F3  │  │ → claudegram UI    │ │
+│  └──────────┘  └──────────┘  └────────────────────┘ │
+│                                                      │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │ Tools: search_memory, remember, run_command,    │ │
+│  │        ask_claude                               │ │
+│  └─────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
 ```
 
-- **Size**: 100x22 pixels (compact floating button)
-- **Behavior**: Always on top, transparent background, no window borders
-- **Dragging**: Right-click or Ctrl+Left-click to drag to a new position
+### Rendering
 
-## 🏎️ Why Groq DEV Tier?
+Two transparent always-on-top windows rendered with **wgpu + WGSL shaders**:
 
-<div align="center">
-  <table>
-    <tr>
-      <th>Feature</th>
-      <th>Groq DEV Tier</th>
-      <th>OpenAI Free</th>
-    </tr>
-    <tr>
-      <td>Speed</td>
-      <td>🚀 Lightning Fast</td>
-      <td>🐌 Slow</td>
-    </tr>
-    <tr>
-      <td>Rate Limits</td>
-      <td>💪 400 RPM</td>
-      <td>😔 Limited</td>
-    </tr>
-    <tr>
-      <td>Model</td>
-      <td>🧠 Whisper v3 Turbo</td>
-      <td>🤖 Basic Whisper</td>
-    </tr>
-    <tr>
-      <td>Quality</td>
-      <td>🎯 Premium</td>
-      <td>📉 Variable</td>
-    </tr>
-  </table>
-</div>
+- **AI Orb** (96px) — Animated spiral sphere shader that reacts to voice state (idle pulse, speaking glow, thinking spin)
+- **Waveform Strip** (64px) — Real-time audio level visualization at the bottom of the screen
 
-## 🚀 Quick Start
+Both windows use `softbuffer` for X11 transparency compositing. No toolkit, no DOM, no CSS — raw GPU pixels on a transparent surface.
 
-### 🌟 **ONE-COMMAND Install**
+### Voice Pipeline
+
+**Groq mode:**
+```
+Mic (cpal) → WAV buffer → Groq Whisper API → clipboard (xclip) → xdotool paste
+```
+
+**Gemini mode:**
+```
+Mic (cpal) → PCM 16kHz → WebSocket → Gemini 2.0 Flash Live
+                                          ↓
+                              ← Audio response (PCM 24kHz)
+                              ← Function calls (tools)
+                              ← Text responses
+```
+
+### Gemini Tools
+
+When in Gemini mode, the AI has access to 4 function-calling tools:
+
+| Tool | Description |
+|------|-------------|
+| `search_memory` | FTS5 search over the ShieldCortex memory database (SQLite) |
+| `remember` | Save a new memory to the database for cross-session recall |
+| `run_command` | Execute a shell command with 30s timeout, return stdout/stderr |
+| `ask_claude` | Delegate a task to Claude Code CLI, return the response |
+
+### Dashboard
+
+A WebSocket broadcast server on `ws://localhost:3001` streams real-time events to the [**claudegram dashboard**](https://github.com/lliWcWill/claudegram-dashboard) — a separate Next.js project with a glass-morphism UI that shows:
+
+- Agent status cards (Claude, Gemini, Droid, Groq) with live state indicators
+- Kanban board for tracking agent tasks across columns
+- Action log with conversation bubbles, per-event copy, and session export
+- Tool call timeline with elapsed timers
+
+See the [claudegram-dashboard repo](https://github.com/lliWcWill/claudegram-dashboard) for setup and usage.
+
+## Quick Start (Native)
+
+### Prerequisites
+
+- Rust 1.75+
+- Linux with X11 (Wayland support planned)
+- A [Groq API key](https://console.groq.com) for transcription
+- A [Google AI API key](https://aistudio.google.com/apikey) for Gemini Live voice
+
+### System Dependencies (Debian/Ubuntu)
 
 ```bash
-# Clone and install everything automatically
+sudo apt install -y \
+    build-essential pkg-config \
+    libasound2-dev \
+    xdotool xclip \
+    libx11-dev libxcb1-dev
+```
+
+### Build & Install
+
+```bash
+git clone https://github.com/lliWcWill/maVoice-Linux.git
+cd maVoice-Linux/mavoice-native
+
+# Build release binary
+cargo build --release
+
+# Install to ~/.local/bin
+cp target/release/mavoice-native ~/.local/bin/
+
+# Create config
+mkdir -p ~/.config/mavoice
+cat > ~/.config/mavoice/config.toml << 'EOF'
+api_key = "gsk_your_groq_key_here"
+gemini_api_key = "your_google_ai_key_here"
+model = "whisper-large-v3-turbo"
+language = "en"
+mode = "gemini"
+voice_name = "Aoede"
+EOF
+```
+
+### Run
+
+```bash
+mavoice-native
+```
+
+### Systemd Service (auto-start)
+
+```bash
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/mavoice.service << 'EOF'
+[Unit]
+Description=maVoice — AI Voice Assistant Overlay
+Documentation=https://github.com/lliWcWill/maVoice-Linux
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/mavoice-native
+Restart=on-failure
+RestartSec=3
+Environment=DISPLAY=:0
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now mavoice
+```
+
+## Quick Start (Tauri — Legacy)
+
+The original Tauri version is a floating desktop widget with a React-based settings panel, model selection, and multi-language support.
+
+### Prerequisites
+
+- Node.js 18+
+- Rust 1.70+
+- Tauri 2 system dependencies (WebKitGTK, etc.)
+
+### Install & Run
+
+```bash
 git clone https://github.com/lliWcWill/maVoice-Linux.git
 cd maVoice-Linux
 ./install.sh
@@ -91,64 +209,14 @@ cd maVoice-Linux
 # Add your Groq API key
 echo "VITE_GROQ_API_KEY=your_groq_api_key_here" > src-tauri/aquavoice-frontend/.env
 
-# Launch!
+# Launch
 npm run dev
 ```
 
-### Prerequisites
-
-- Node.js 18+
-- Rust 1.70+
-- A Groq API key ([Get one here](https://console.groq.com))
-
-### Platform-Specific Setup
-
 <details>
-<summary><b>🪟 WSL2 Setup (Windows Users)</b></summary>
-
-**✨ BREAKTHROUGH: WSL2 + WSLg provides PERFECT voice dictation with zero audio issues!**
-
-#### Prerequisites
-
-1. **Update WSL2** (from Windows PowerShell as Administrator):
-   ```powershell
-   wsl --update
-   wsl --version  # Ensure version 2 with WSLg
-   ```
-
-2. **Install Debian/Ubuntu** if you don't have it:
-   ```powershell
-   wsl --install -d Debian
-   ```
-
-#### Installation
+<summary><b>Tauri system dependencies (Debian/Ubuntu)</b></summary>
 
 ```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source $HOME/.cargo/env
-
-# Install system dependencies
-sudo apt update && sudo apt install -y \
-    build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
-    libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libdbus-1-dev \
-    libappindicator3-dev librsvg2-dev libasound2-dev \
-    xdotool wl-clipboard wtype
-
-# Clone and run
-git clone https://github.com/lliWcWill/maVoice-Linux.git
-cd maVoice-Linux
-./install.sh
-```
-
-</details>
-
-<details>
-<summary><b>🐧 Native Linux Setup</b></summary>
-
-**Debian/Ubuntu:**
-```bash
-sudo apt update
 sudo apt install -y \
     build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
     libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libdbus-1-dev \
@@ -156,94 +224,143 @@ sudo apt install -y \
     xdotool wl-clipboard wtype
 ```
 
-**Fedora/Arch** - See [detailed instructions](QUICK_REFERENCE.md)
+</details>
+
+<details>
+<summary><b>WSL2 setup</b></summary>
+
+WSL2 + WSLg works for the Tauri version. Update WSL2 from PowerShell:
+```powershell
+wsl --update
+wsl --version  # Ensure version 2 with WSLg
+```
+Then install dependencies inside your WSL2 distro and run normally.
 
 </details>
 
-### 📦 Build Debian Package
+### Tauri Usage
 
-```bash
-# Build the .deb package
-npm run build
+- **Double-click** the floating widget to start recording
+- **Single-click** to stop and transcribe
+- **Right-click** or **Ctrl+click** to drag the widget
+- **Settings** via the gear icon (model selection, language, custom prompts, temperature)
 
-# The .deb file will be in:
-# src-tauri/target/release/bundle/deb/
+## Usage (Native)
+
+### Hotkeys
+
+| Key | Action |
+|-----|--------|
+| **F2** | Toggle Groq dictation (push-to-talk) |
+| **F3** | Toggle Gemini Live voice conversation |
+
+### Groq Mode (F2)
+
+1. Press **F2** to start recording
+2. Speak naturally
+3. Press **F2** again to stop
+4. Transcription is copied to clipboard and pasted at cursor
+
+### Gemini Mode (F3)
+
+1. Press **F3** to open a Gemini Live session
+2. Speak naturally — the AI responds with voice in real-time
+3. The AI can use tools (search memory, run commands, ask Claude)
+4. Press **F3** again to end the session
+5. Supports barge-in (interrupt the AI mid-sentence)
+
+### Configuration
+
+Edit `~/.config/mavoice/config.toml`:
+
+```toml
+api_key = "gsk_..."                # Groq API key
+gemini_api_key = "AI..."           # Google AI API key
+model = "whisper-large-v3-turbo"   # Groq model
+language = "en"                    # Transcription language
+mode = "gemini"                    # Default mode: "groq" or "gemini"
+voice_name = "Aoede"               # Gemini voice: Puck, Charon, Kore, Fenrir, Aoede
+system_instruction = "..."         # Custom system prompt for Gemini
+temperature = 0.0                  # Groq transcription temperature
+dictionary = ""                    # Custom terms for Groq
 ```
 
-## 🎮 Usage
+## Tech Stack
 
-### Desktop App
-1. **Launch maVoice** - The app appears as a sleek floating widget
-2. **Double-click to start** - The microphone activates with visual feedback
-3. **Speak naturally** - Real-time audio visualization shows your voice
-4. **Single-click to stop** - Transcription appears instantly
-5. **Copy & paste** - Text is automatically copied to clipboard
+### Native (`mavoice-native/`)
 
-### Web Interface (http://localhost:5173)
-- **Settings panel** - Click the gear icon for full configuration
-- **API key setup** - Secure local storage of your Groq key
-- **Model selection** - Choose from Whisper variants
-- **Custom prompts** - Add technical terms, names, or style instructions
-- **Temperature control** - Adjust creativity vs accuracy
-- **Multi-language** - Support for 100+ languages
+| Component | Technology |
+|-----------|------------|
+| Language | Rust (pure, no WebView) |
+| GPU Rendering | wgpu + WGSL shaders |
+| Window Management | winit + softbuffer (X11 transparency) |
+| Audio Capture | cpal (ALSA) |
+| Voice AI | Gemini 2.0 Flash Live (WebSocket) |
+| Transcription | Groq Whisper Large v3 Turbo |
+| Tool Execution | rusqlite, tokio::process, Claude CLI |
+| Dashboard | tokio-tungstenite broadcast server |
+| Hotkeys | global-hotkey crate |
+| Clipboard | xclip, xdotool |
 
-### Keyboard Shortcuts
-- `Ctrl+,` - Open settings
-- `Alt+Space` - Toggle recording
-- `Double Alt` - Quick record
-- `Spacebar` - Stop recording (while active)
+### Tauri (`src-tauri/`)
 
-## 🛠️ Tech Stack
+| Component | Technology |
+|-----------|------------|
+| Framework | Tauri 2 |
+| Frontend | React + TypeScript + Tailwind |
+| Transcription | Groq Whisper (via groq-sdk) |
+| Audio | Web Audio API |
 
-<div align="center">
-  <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
-  <img src="https://img.shields.io/badge/Tauri-24C8DB?style=for-the-badge&logo=tauri&logoColor=white" alt="Tauri">
-  <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React">
-  <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/Tailwind-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind">
-</div>
+## Project Structure
 
-## 🤝 Contributing
+```
+maVoice-Linux/
+├── mavoice-native/              # ← Pure Rust native overlay (active)
+│   ├── src/
+│   │   ├── main.rs              # Entry point, window creation
+│   │   ├── app.rs               # Event loop, state machine, dashboard
+│   │   ├── renderer.rs          # wgpu setup, shader pipeline
+│   │   ├── shader.wgsl          # Waveform strip shader
+│   │   ├── ai_shader.wgsl       # AI orb spiral sphere shader
+│   │   ├── config.rs            # TOML config loading
+│   │   ├── dashboard.rs         # WebSocket broadcast server
+│   │   ├── state_machine.rs     # App state transitions
+│   │   ├── api/
+│   │   │   ├── gemini.rs        # Gemini Live bidirectional WebSocket
+│   │   │   └── groq.rs          # Groq Whisper transcription API
+│   │   ├── audio/
+│   │   │   ├── recorder.rs      # cpal microphone capture
+│   │   │   └── player.rs        # PCM audio playback
+│   │   ├── system/
+│   │   │   ├── hotkeys.rs       # Global F2/F3 hotkey registration
+│   │   │   └── text_inject.rs   # xdotool clipboard paste
+│   │   └── tools/
+│   │       └── mod.rs           # Gemini function calling tools
+│   └── Cargo.toml
+│
+├── src-tauri/                   # ← Tauri 2 desktop app (legacy)
+│   ├── aquavoice-frontend/      # React + TypeScript UI
+│   │   └── src/components/
+│   │       └── FloatingOverlay.tsx
+│   ├── src/main.rs              # Tauri backend
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+│
+├── install.sh                   # Tauri dependency installer
+├── package.json                 # Tauri npm scripts
+└── README.md
+```
 
-We love contributions! Whether it's:
+## Related Projects
 
-- 🐛 Bug reports
-- 💡 Feature requests
-- 🔧 Pull requests
-- 📖 Documentation improvements
+- **[claudegram-dashboard](https://github.com/lliWcWill/claudegram-dashboard)** — Real-time agent monitoring dashboard (Next.js + glass morphism UI). Connects to maVoice's WebSocket broadcast server to display agent status, kanban tasks, conversation logs, and tool call timelines.
 
-Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
+## License
 
-## 📈 Performance
-
-maVoice leverages Groq's incredible inference speed:
-
-- **Transcription Speed**: < 500ms for 30-second audio
-- **Memory Usage**: < 50MB idle, < 100MB active
-- **CPU Usage**: < 5% during transcription
-- **Network**: Minimal bandwidth usage with smart chunking
-
-## 🔐 Privacy & Security
-
-- **Local First**: All processing happens on your machine
-- **No Telemetry**: We don't track anything
-- **Secure API**: Your Groq API key is stored locally and never shared
-- **Open Source**: Audit the code yourself!
-
-## 📜 License
-
-maVoice is MIT licensed. See [LICENSE](LICENSE) for details.
-
-## 🙏 Acknowledgments
-
-- **Groq** - For providing insanely fast inference
-- **Whisper** - OpenAI's amazing speech recognition model
-- **Tauri** - For making native apps actually enjoyable to build
-- **You** - For choosing open-source!
+MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
-  <p>Built with ❤️ by developers who were tired of slow dictation</p>
-  <p><strong>maVoice</strong> - Where speed meets simplicity</p>
+  <strong>maVoice</strong> — Pure Rust AI voice on your desktop
 </div>
