@@ -2,17 +2,20 @@ use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
-/// Uniform buffer layout — 48 bytes, matches shader struct
+/// Uniform buffer layout — 80 bytes, matches shader struct
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct Uniforms {
-    pub resolution: [f32; 2], // 8 bytes
-    pub time: f32,            // 4 bytes
+    pub resolution: [f32; 2], // 8 bytes  (offset 0)
+    pub time: f32,            // 4 bytes  (offset 8)
     pub intensity: f32,       // 4 bytes  (offset 12)
-    pub levels: [f32; 4],     // 16 bytes (offset 16)
-    pub color: [f32; 3],      // 12 bytes (offset 32)
+    pub levels: [f32; 4],     // 16 bytes (offset 16) — user mic
+    pub color: [f32; 3],      // 12 bytes (offset 32) — user color
     pub mode: f32,            // 4 bytes  (offset 44)
-}                             // total: 48 bytes
+    pub ai_levels: [f32; 4],  // 16 bytes (offset 48) — AI output
+    pub ai_color: [f32; 3],   // 12 bytes (offset 64) — AI color
+    pub ai_intensity: f32,    // 4 bytes  (offset 76)
+}                             // total: 80 bytes
 
 pub struct Renderer {
     pub device: Arc<wgpu::Device>,
@@ -120,6 +123,9 @@ impl Renderer {
             levels: [0.0; 4],
             color: [0.0; 3],
             mode: 0.0,
+            ai_levels: [0.0; 4],
+            ai_color: [0.0; 3],
+            ai_intensity: 0.0,
         };
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

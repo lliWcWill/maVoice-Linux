@@ -2,35 +2,49 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OverlayState {
     Idle,
-    Recording,
-    Processing,
-    Done,
+    Recording,   // Mode A: buffering for Groq
+    Processing,  // Mode A: waiting for Groq API
+    Done,        // Mode A: transcription complete
+    Listening,   // Mode B: streaming to Gemini, user speaking
+    AISpeaking,  // Mode B: Gemini responding with audio
 }
 
-/// Color palette — exact RGB values from FloatingOverlay.tsx
+/// Color palette
 const COLOR_IDLE: [f32; 3] = [0.0, 0.0, 0.0];
-const COLOR_RECORDING: [f32; 3] = [1.0, 0.51, 0.24]; // warm amber
-const COLOR_PROCESSING: [f32; 3] = [0.9, 0.76, 0.31]; // golden
-const COLOR_DONE: [f32; 3] = [0.31, 0.86, 0.51]; // emerald
+const COLOR_RECORDING: [f32; 3] = [1.0, 0.51, 0.24];    // warm amber
+const COLOR_PROCESSING: [f32; 3] = [0.9, 0.76, 0.31];   // golden
+const COLOR_DONE: [f32; 3] = [0.31, 0.86, 0.51];        // emerald
+const COLOR_LISTENING: [f32; 3] = [0.024, 0.714, 0.831]; // cyan #06B6D4
+const COLOR_AI_SPEAKING: [f32; 3] = [0.337, 0.467, 0.969]; // soft blue #5677F7
 
 impl OverlayState {
-    pub fn target_color(&self) -> [f32; 3] {
+    /// User waveform color (bottom line)
+    pub fn user_color(&self) -> [f32; 3] {
         match self {
             OverlayState::Idle => COLOR_IDLE,
             OverlayState::Recording => COLOR_RECORDING,
             OverlayState::Processing => COLOR_PROCESSING,
             OverlayState::Done => COLOR_DONE,
+            OverlayState::Listening => COLOR_LISTENING,
+            OverlayState::AISpeaking => COLOR_LISTENING, // stays cyan when AI responds
         }
     }
 }
 
-/// Smoothed visual state interpolated per-frame
+/// Smoothed visual state interpolated per-frame.
+/// Tracks user waveform (bottom) and AI bubble (top) independently.
 pub struct VisualState {
     pub state: OverlayState,
+    // User channel (bottom waveform)
     pub levels: [f32; 4],
     pub intensity: f32,
     pub color: [f32; 3],
     pub mode: f32, // 0.0 = waveform, 1.0 = processing
+    // AI channel (top bubble)
+    pub ai_levels: [f32; 4],
+    pub ai_intensity: f32,
+    pub ai_color: [f32; 3],
+    // Timing
     pub done_start: Option<std::time::Instant>,
 }
 
@@ -42,6 +56,9 @@ impl VisualState {
             intensity: 0.0,
             color: COLOR_IDLE,
             mode: 0.0,
+            ai_levels: [0.0; 4],
+            ai_intensity: 0.0,
+            ai_color: COLOR_AI_SPEAKING,
             done_start: None,
         }
     }
@@ -58,55 +75,96 @@ impl VisualState {
         }
     }
 
-    /// Per-frame update — returns true if a redraw is needed
+    /// Per-frame update — returns true if a redraw is needed.
+    /// `raw_levels`: mic input levels. `output_levels`: AI audio output levels.
     pub fn update(&mut self, raw_levels: [f32; 4]) -> bool {
-        let is_active = self.state == OverlayState::Recording;
+        self.update_with_output(raw_levels, [0.0; 4])
+    }
 
-        // Smooth audio levels (lerp 0.18 when active, 0.3 when decaying)
-        let level_speed = if is_active { 0.18 } else { 0.3 };
-        let target_levels = if is_active { raw_levels } else { [0.0; 4] };
+    /// Per-frame update with both input and output audio levels.
+    pub fn update_with_output(&mut self, raw_levels: [f32; 4], output_levels: [f32; 4]) -> bool {
+        // ── User channel (bottom waveform) ──
+        let user_active = matches!(
+            self.state,
+            OverlayState::Recording | OverlayState::Listening
+        );
+
+        // Smooth user audio levels
+        let user_speed = if user_active { 0.18 } else { 0.3 };
+        let user_target = if user_active { raw_levels } else { [0.0; 4] };
         for i in 0..4 {
-            self.levels[i] += (target_levels[i] - self.levels[i]) * level_speed;
+            self.levels[i] += (user_target[i] - self.levels[i]) * user_speed;
             if self.levels[i] < 0.003 {
                 self.levels[i] = 0.0;
             }
         }
 
-        // Smooth intensity (0.15 ramping up, 0.1 decaying)
-        let target_int = if self.state == OverlayState::Idle {
-            0.0
-        } else {
-            1.0
+        // Smooth user intensity
+        let user_int_target = match self.state {
+            OverlayState::Idle => 0.0,
+            OverlayState::AISpeaking => 0.15, // dim but not gone when AI speaks
+            _ => 1.0,
         };
-        let int_speed = if self.state == OverlayState::Idle {
-            0.1
-        } else {
-            0.15
-        };
-        self.intensity += (target_int - self.intensity) * int_speed;
+        let user_int_speed = if self.state == OverlayState::Idle { 0.1 } else { 0.15 };
+        self.intensity += (user_int_target - self.intensity) * user_int_speed;
         if self.intensity < 0.003 {
             self.intensity = 0.0;
         }
 
-        // Smooth color (lerp 0.08)
-        let tc = self.state.target_color();
+        // Smooth user color
+        let tc = self.state.user_color();
         for i in 0..3 {
             self.color[i] += (tc[i] - self.color[i]) * 0.08;
         }
 
         // Mode: 0.0 for waveform, 1.0 for processing orbs
-        let target_mode = if self.state == OverlayState::Processing {
-            1.0
-        } else {
-            0.0
-        };
+        let target_mode = if self.state == OverlayState::Processing { 1.0 } else { 0.0 };
         self.mode += (target_mode - self.mode) * 0.15;
 
-        // Handle Done state: 1.5s fade, auto-idle at 2s
+        // ── AI channel (top bubble) ──
+        let ai_active = self.state == OverlayState::AISpeaking;
+
+        // Smooth AI audio levels
+        let ai_speed = if ai_active { 0.18 } else { 0.3 };
+        let ai_target = if ai_active { output_levels } else { [0.0; 4] };
+        for i in 0..4 {
+            self.ai_levels[i] += (ai_target[i] - self.ai_levels[i]) * ai_speed;
+            if self.ai_levels[i] < 0.003 {
+                self.ai_levels[i] = 0.0;
+            }
+        }
+
+        // Smooth AI intensity
+        let ai_int_target = match self.state {
+            OverlayState::AISpeaking => 1.0,
+            OverlayState::Listening => 0.25, // dim presence while user speaks
+            _ => 0.0,
+        };
+        let ai_int_speed = if ai_active { 0.15 } else { 0.1 };
+        self.ai_intensity += (ai_int_target - self.ai_intensity) * ai_int_speed;
+        if self.ai_intensity < 0.003 {
+            self.ai_intensity = 0.0;
+        }
+
+        // Smooth AI color (stays blue)
+        for i in 0..3 {
+            self.ai_color[i] += (COLOR_AI_SPEAKING[i] - self.ai_color[i]) * 0.08;
+        }
+
+        // ── Done state auto-reset ──
         if self.state == OverlayState::Done {
             if let Some(start) = self.done_start {
-                let elapsed = start.elapsed().as_secs_f32();
-                if elapsed >= 2.0 {
+                if start.elapsed().as_secs_f32() >= 2.0 {
+                    self.set_state(OverlayState::Idle);
+                    self.done_start = None;
+                }
+            }
+        }
+
+        // Also handle mode-switch flash (Listening/Recording with done_start)
+        if matches!(self.state, OverlayState::Listening | OverlayState::Recording) {
+            if let Some(start) = self.done_start {
+                if start.elapsed().as_secs_f32() >= 1.0 {
                     self.set_state(OverlayState::Idle);
                     self.done_start = None;
                 }
@@ -115,16 +173,21 @@ impl VisualState {
 
         // Redraw needed if anything is visible
         self.intensity > 0.001
+            || self.ai_intensity > 0.001
             || self.levels.iter().any(|&l| l > 0.001)
+            || self.ai_levels.iter().any(|&l| l > 0.001)
             || self.state != OverlayState::Idle
     }
 
-    /// Get effective levels for the shader (with recording floor + done fade)
+    /// Get effective user levels for the shader
     pub fn effective_levels(&self) -> [f32; 4] {
         match self.state {
-            OverlayState::Recording => {
-                // Floor at 0.12 for base waveform movement
-                self.levels.map(|l| l.max(0.12))
+            OverlayState::Recording | OverlayState::Listening => {
+                self.levels.map(|l| l.max(0.18))
+            }
+            OverlayState::AISpeaking => {
+                // Dim user waveform to subtle breathing
+                self.levels.map(|l| l.max(0.05))
             }
             OverlayState::Processing => [0.0; 4],
             OverlayState::Done => {
@@ -139,10 +202,25 @@ impl VisualState {
         }
     }
 
-    /// Get effective intensity for the shader
+    /// Get effective AI levels for the shader
+    pub fn effective_ai_levels(&self) -> [f32; 4] {
+        match self.state {
+            OverlayState::AISpeaking => {
+                self.ai_levels.map(|l| l.max(0.15))
+            }
+            OverlayState::Listening => {
+                // Subtle presence while user speaks
+                [0.03; 4]
+            }
+            _ => [0.0; 4],
+        }
+    }
+
+    /// Get effective user intensity for the shader
     pub fn effective_intensity(&self) -> f32 {
         match self.state {
-            OverlayState::Recording => self.intensity * 0.85,
+            OverlayState::Recording | OverlayState::Listening => self.intensity * 0.85,
+            OverlayState::AISpeaking => self.intensity * 0.3, // dim user while AI speaks
             OverlayState::Done => {
                 if let Some(start) = self.done_start {
                     let fade = (1.0 - start.elapsed().as_secs_f32() / 1.5).max(0.0);
@@ -152,6 +230,15 @@ impl VisualState {
                 }
             }
             _ => self.intensity,
+        }
+    }
+
+    /// Get effective AI intensity for the shader
+    pub fn effective_ai_intensity(&self) -> f32 {
+        match self.state {
+            OverlayState::AISpeaking => self.ai_intensity * 0.9,
+            OverlayState::Listening => self.ai_intensity * 0.2, // subtle presence
+            _ => self.ai_intensity,
         }
     }
 }

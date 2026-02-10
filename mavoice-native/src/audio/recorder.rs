@@ -5,6 +5,9 @@ use hound::{SampleFormat as HoundSampleFormat, WavSpec, WavWriter};
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
+/// Callback that receives raw s16le PCM chunks for real-time streaming (Gemini mode).
+pub type StreamingCallback = Arc<dyn Fn(&[u8]) + Send + Sync>;
+
 pub struct GroqRecorder {
     device: Device,
     config: StreamConfig,
@@ -12,6 +15,8 @@ pub struct GroqRecorder {
     audio_buffer: Arc<Mutex<Vec<f32>>>,
     sample_sender: Sender<f32>,
     _sample_receiver: Receiver<f32>,
+    /// Optional callback for real-time audio streaming (fires ~10x/sec with s16le chunks).
+    streaming_callback: Arc<Mutex<Option<StreamingCallback>>>,
 }
 
 impl GroqRecorder {
@@ -72,6 +77,7 @@ impl GroqRecorder {
             audio_buffer,
             sample_sender: tx,
             _sample_receiver: rx,
+            streaming_callback: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -85,6 +91,7 @@ impl GroqRecorder {
 
         let audio_buf = self.audio_buffer.clone();
         let tx = self.sample_sender.clone();
+        let streaming_cb = self.streaming_callback.clone();
 
         let sample_format = self
             .device
@@ -92,23 +99,50 @@ impl GroqRecorder {
             .map_err(|e| e.to_string())?
             .sample_format();
 
+        log::info!("Sample format: {:?}", sample_format);
         let err_fn = |err| log::error!("Stream error: {err}");
 
+        // Accumulator for streaming chunks (~100ms = 1600 samples at 16kHz)
+        const STREAM_CHUNK_SIZE: usize = 1600;
+
         self.stream = Some(match sample_format {
-            SampleFormat::F32 => self
-                .device
-                .build_input_stream(
-                    &self.config,
-                    move |data: &[f32], _| {
-                        for &s in data {
-                            let _ = tx.send(s);
-                        }
-                        audio_buf.lock().unwrap().extend_from_slice(data);
-                    },
-                    err_fn,
-                    None,
-                )
-                .map_err(|e| e.to_string())?,
+            SampleFormat::F32 => {
+                let mut chunk_accum: Vec<f32> = Vec::with_capacity(STREAM_CHUNK_SIZE);
+                self.device
+                    .build_input_stream(
+                        &self.config,
+                        move |data: &[f32], _| {
+                            for &s in data {
+                                let _ = tx.send(s);
+                            }
+                            audio_buf.lock().unwrap().extend_from_slice(data);
+
+                            // Accumulate for streaming callback
+                            let cb = streaming_cb.lock().unwrap();
+                            if cb.is_some() {
+                                chunk_accum.extend_from_slice(data);
+                                while chunk_accum.len() >= STREAM_CHUNK_SIZE {
+                                    // Convert f32 → s16le bytes
+                                    let mut s16_bytes =
+                                        Vec::with_capacity(STREAM_CHUNK_SIZE * 2);
+                                    for &sample in &chunk_accum[..STREAM_CHUNK_SIZE] {
+                                        let s16 = (sample * i16::MAX as f32)
+                                            .clamp(i16::MIN as f32, i16::MAX as f32)
+                                            as i16;
+                                        s16_bytes.extend_from_slice(&s16.to_le_bytes());
+                                    }
+                                    if let Some(ref callback) = *cb {
+                                        callback(&s16_bytes);
+                                    }
+                                    chunk_accum.drain(..STREAM_CHUNK_SIZE);
+                                }
+                            }
+                        },
+                        err_fn,
+                        None,
+                    )
+                    .map_err(|e| e.to_string())?
+            }
             SampleFormat::I16 => self
                 .device
                 .build_input_stream(
@@ -196,6 +230,12 @@ impl GroqRecorder {
         self.stream.is_some()
     }
 
+    /// Set a callback for real-time audio streaming (Gemini mode).
+    /// The callback receives s16le PCM chunks (~100ms each).
+    pub fn set_streaming_callback(&self, callback: Option<StreamingCallback>) {
+        *self.streaming_callback.lock().unwrap() = callback;
+    }
+
     /// Get real-time audio levels for visualization (4 pseudo-frequency bands)
     pub fn get_audio_levels(&self) -> [f32; 4] {
         if !self.is_recording() {
@@ -240,7 +280,7 @@ impl GroqRecorder {
         }
 
         // Boost with overall RMS for responsiveness
-        let boost = rms * 5.0;
+        let boost = rms * 7.0;
         for level in &mut levels {
             *level = (*level + boost).min(1.0);
         }

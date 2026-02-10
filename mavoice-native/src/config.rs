@@ -9,6 +9,10 @@ pub struct Config {
     pub dictionary: String,
     pub temperature: f32,
     pub response_format: String,
+    pub gemini_api_key: String,
+    pub mode: String,
+    pub voice_name: String,
+    pub system_instruction: String,
 }
 
 impl Default for Config {
@@ -20,6 +24,10 @@ impl Default for Config {
             dictionary: String::new(),
             temperature: 0.0,
             response_format: "json".to_string(),
+            gemini_api_key: String::new(),
+            mode: "groq".to_string(),
+            voice_name: "Kore".to_string(),
+            system_instruction: "You are a helpful voice assistant. Keep responses concise and conversational.".to_string(),
         }
     }
 }
@@ -69,11 +77,16 @@ impl Config {
         Ok(())
     }
 
-    /// Use GROQ_API_KEY env var as fallback if config api_key is empty
+    /// Use env vars as fallback if config keys are empty
     fn with_env_fallback(mut self) -> Self {
         if self.api_key.is_empty() {
             if let Ok(key) = std::env::var("GROQ_API_KEY") {
                 self.api_key = key;
+            }
+        }
+        if self.gemini_api_key.is_empty() {
+            if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+                self.gemini_api_key = key;
             }
         }
         self

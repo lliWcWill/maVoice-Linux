@@ -6,18 +6,39 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId, WindowLevel};
 
-use crate::api::GroqClient;
-use crate::audio::GroqRecorder;
+use crate::api::gemini::GeminiEvent;
+use crate::api::{GeminiLiveClient, GroqClient};
+use crate::audio::{AudioPlayer, GroqRecorder};
+
+/// Global storage for the Gemini client (needed because it's created in an async task
+/// but used from the winit event loop thread). Protected by Mutex.
+static GEMINI_CLIENT: std::sync::LazyLock<Mutex<Option<GeminiLiveClient>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
 use crate::config::Config;
 use crate::renderer::{Renderer, Uniforms};
 use crate::state_machine::{OverlayState, VisualState};
 use crate::system::{HotkeyManager, TextInjector};
+
+/// Voice mode — determines hotkey behavior.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VoiceMode {
+    Groq,       // Mode A: record → Groq Whisper → text paste
+    GeminiLive, // Mode B: stream → bidirectional voice with Gemini
+}
 
 /// Events sent from async tasks back to the event loop
 #[derive(Debug)]
 pub enum AppEvent {
     TranscriptionComplete(String),
     TranscriptionError(String),
+    // Gemini Live events
+    GeminiReady,
+    GeminiAudio(Vec<u8>),
+    GeminiText(String),
+    GeminiInterrupted,
+    GeminiTurnComplete,
+    GeminiError(String),
+    GeminiClosed(String),
 }
 
 /// Click tracking for single/double click detection
@@ -50,6 +71,12 @@ pub struct App {
     is_dragging: bool,
     /// Window ID of the app that was focused before overlay interaction
     previous_window_id: Option<String>,
+    // Gemini Live fields
+    mode: VoiceMode,
+    /// Which mode started the current recording (so we stop correctly)
+    recording_mode: Option<VoiceMode>,
+    audio_player: Option<AudioPlayer>,
+    gemini_connecting: bool,
 }
 
 impl App {
@@ -69,6 +96,12 @@ impl App {
                 Config::config_path().display()
             );
         }
+
+        let initial_mode = if config.mode == "gemini" {
+            VoiceMode::GeminiLive
+        } else {
+            VoiceMode::Groq
+        };
 
         Self {
             window: None,
@@ -93,6 +126,10 @@ impl App {
             last_transcript: String::new(),
             is_dragging: false,
             previous_window_id: None,
+            mode: initial_mode,
+            recording_mode: None,
+            audio_player: None,
+            gemini_connecting: false,
         }
     }
 
@@ -195,6 +232,156 @@ impl App {
         }
     }
 
+    // ── Gemini Live methods ──────────────────────────────────────────
+    // Gemini Live is a CONTINUOUS bidirectional session — like a phone call.
+    // One press to connect (mic always live, streaming to Gemini).
+    // One press to disconnect. Both waveforms live simultaneously.
+
+    /// True if Gemini session is active (connected or connecting, mic streaming)
+    fn gemini_session_active(&self) -> bool {
+        let has_client = GEMINI_CLIENT
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|c| c.is_open())
+            .unwrap_or(false);
+        has_client || self.gemini_connecting
+    }
+
+    /// Toggle Gemini Live session on/off.
+    fn toggle_gemini_session(&mut self) {
+        if self.gemini_session_active() || self.is_recording() {
+            self.disconnect_gemini();
+        } else {
+            self.connect_gemini();
+        }
+    }
+
+    /// Connect to Gemini Live and start continuous mic streaming.
+    fn connect_gemini(&mut self) {
+        if self.gemini_session_active() {
+            return;
+        }
+
+        if self.config.gemini_api_key.is_empty() {
+            log::error!("[Gemini] No API key! Set GEMINI_API_KEY or add gemini_api_key to config.toml");
+            return;
+        }
+
+        log::info!("[Gemini] Starting live session...");
+
+        // Init audio player if needed
+        if self.audio_player.is_none() {
+            match AudioPlayer::new() {
+                Ok(player) => self.audio_player = Some(player),
+                Err(e) => {
+                    log::error!("Failed to init audio player: {}", e);
+                    return;
+                }
+            }
+        }
+
+        self.gemini_connecting = true;
+        self.visual.set_state(OverlayState::Processing);
+
+        let api_key = self.config.gemini_api_key.clone();
+        let voice_name = self.config.voice_name.clone();
+        let system_instruction = self.config.system_instruction.clone();
+        let proxy = self.event_proxy.clone();
+
+        self.tokio_rt.spawn(async move {
+            let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<GeminiEvent>();
+
+            match GeminiLiveClient::connect(&api_key, &voice_name, &system_instruction, event_tx)
+                .await
+            {
+                Ok(client) => {
+                    log::info!("[Gemini] WebSocket connected, starting event bridge");
+
+                    let proxy_clone = proxy.clone();
+                    tokio::spawn(async move {
+                        while let Some(event) = event_rx.recv().await {
+                            let app_event = match event {
+                                GeminiEvent::Ready => AppEvent::GeminiReady,
+                                GeminiEvent::Audio(data) => AppEvent::GeminiAudio(data),
+                                GeminiEvent::Text(text) => AppEvent::GeminiText(text),
+                                GeminiEvent::Interrupted => AppEvent::GeminiInterrupted,
+                                GeminiEvent::TurnComplete => AppEvent::GeminiTurnComplete,
+                                GeminiEvent::Error(e) => AppEvent::GeminiError(e),
+                                GeminiEvent::Closed(reason) => AppEvent::GeminiClosed(reason),
+                            };
+                            if proxy_clone.send_event(app_event).is_err() {
+                                break;
+                            }
+                        }
+                    });
+
+                    GEMINI_CLIENT.lock().unwrap().replace(client);
+                    let _ = proxy.send_event(AppEvent::GeminiReady);
+                }
+                Err(e) => {
+                    log::error!("[Gemini] Connection failed: {}", e);
+                    let _ = proxy.send_event(AppEvent::GeminiError(e));
+                }
+            }
+        });
+    }
+
+    /// Start continuous mic streaming after Gemini connection is ready.
+    fn start_gemini_mic(&mut self) {
+        if self.is_recording() {
+            return;
+        }
+
+        log::info!("[Gemini] Starting continuous mic stream");
+
+        // Set up streaming callback — sends audio to Gemini in real-time
+        let streaming_cb: crate::audio::recorder::StreamingCallback =
+            Arc::new(move |pcm_s16le: &[u8]| {
+                let guard = GEMINI_CLIENT.lock().unwrap();
+                if let Some(ref c) = *guard {
+                    c.send_audio(pcm_s16le);
+                }
+            });
+        self.recorder
+            .lock()
+            .unwrap()
+            .set_streaming_callback(Some(streaming_cb));
+
+        if let Err(e) = self.recorder.lock().unwrap().start_recording() {
+            log::error!("Failed to start recording: {}", e);
+            return;
+        }
+
+        // Mic is live — user waveform always visible
+        self.visual.set_state(OverlayState::Listening);
+    }
+
+    /// Disconnect from Gemini Live and stop everything.
+    fn disconnect_gemini(&mut self) {
+        log::info!("[Gemini] Disconnecting session");
+
+        // Stop mic
+        if self.is_recording() {
+            let _ = self.recorder.lock().unwrap().stop_recording();
+        }
+        self.recorder.lock().unwrap().set_streaming_callback(None);
+
+        // Close WebSocket
+        if let Some(client) = GEMINI_CLIENT.lock().unwrap().take() {
+            client.close();
+        }
+
+        // Clear audio playback
+        if let Some(ref player) = self.audio_player {
+            player.clear();
+        }
+
+        self.gemini_connecting = false;
+        self.recording_mode = None;
+        self.visual.set_state(OverlayState::Idle);
+    }
+
     fn set_skip_taskbar(_window: &Window) {
         // Use xdotool to set skip-taskbar by window name (works on X11)
         // This is a post-creation escape hatch since winit doesn't expose atom APIs
@@ -283,11 +470,18 @@ impl ApplicationHandler<AppEvent> for App {
             }
 
             WindowEvent::RedrawRequested => {
-                // Poll audio levels
+                // Poll audio levels from mic
                 let raw_levels = self.recorder.lock().unwrap().get_audio_levels();
 
-                // Update visual state
-                let needs_redraw = self.visual.update(raw_levels);
+                // Poll audio levels from AI output (if playing)
+                let output_levels = self
+                    .audio_player
+                    .as_ref()
+                    .map(|p| p.get_output_levels())
+                    .unwrap_or([0.0; 4]);
+
+                // Update visual state with both channels
+                let needs_redraw = self.visual.update_with_output(raw_levels, output_levels);
 
                 if let Some(r) = &self.renderer {
                     let size = r.surface_config.width as f32;
@@ -300,6 +494,9 @@ impl ApplicationHandler<AppEvent> for App {
                         levels: self.visual.effective_levels(),
                         color: self.visual.color,
                         mode: self.visual.mode,
+                        ai_levels: self.visual.effective_ai_levels(),
+                        ai_color: self.visual.ai_color,
+                        ai_intensity: self.visual.effective_ai_intensity(),
                     };
 
                     match r.render(&uniforms) {
@@ -319,8 +516,13 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
 
-                // Request next frame if active
-                if needs_redraw || self.visual.state != OverlayState::Idle {
+                // Request next frame if active (either channel)
+                let ai_playing = self
+                    .audio_player
+                    .as_ref()
+                    .map(|p| p.is_playing())
+                    .unwrap_or(false);
+                if needs_redraw || self.visual.state != OverlayState::Idle || ai_playing {
                     if let Some(w) = &self.window {
                         w.request_redraw();
                     }
@@ -426,14 +628,36 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Check global hotkeys
+        // Ctrl+Shift+Comma = Groq transcription (push-to-talk, Mode A)
+        // Ctrl+Shift+Period = Gemini Live session toggle (always-on call, Mode B)
         if let Some(ref hk) = self.hotkey_manager {
-            if hk.poll_toggle() {
+            let poll = hk.poll();
+            if poll.toggle_fired {
+                // Comma = Groq push-to-talk. If Gemini session is active, disconnect first.
+                if self.gemini_session_active() || self.recording_mode == Some(VoiceMode::GeminiLive) {
+                    self.disconnect_gemini();
+                }
+                self.mode = VoiceMode::Groq;
+                self.recording_mode = Some(VoiceMode::Groq);
                 self.toggle_recording();
+            }
+            if poll.mode_switch_fired {
+                // Period = Gemini session toggle. If Groq recording active, stop it first.
+                if self.recording_mode == Some(VoiceMode::Groq) && self.is_recording() {
+                    let _ = self.recorder.lock().unwrap().stop_recording();
+                    self.visual.set_state(OverlayState::Idle);
+                }
+                self.mode = VoiceMode::GeminiLive;
+                self.recording_mode = Some(VoiceMode::GeminiLive);
+                self.toggle_gemini_session();
             }
         }
 
         // Drive animation — request redraw when anything is visible
-        if self.visual.state != OverlayState::Idle || self.visual.intensity > 0.001 {
+        if self.visual.state != OverlayState::Idle
+            || self.visual.intensity > 0.001
+            || self.visual.ai_intensity > 0.001
+        {
             if let Some(w) = &self.window {
                 w.request_redraw();
             }
@@ -447,7 +671,6 @@ impl ApplicationHandler<AppEvent> for App {
         match event {
             AppEvent::TranscriptionComplete(text) => {
                 self.handle_transcription_result(text);
-                // Trigger redraw for Done state
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -455,6 +678,74 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::TranscriptionError(err) => {
                 log::error!("Transcription error: {}", err);
                 self.visual.set_state(OverlayState::Idle);
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
+            // ── Gemini Live events ──
+
+            AppEvent::GeminiReady => {
+                log::info!("[Gemini] Ready — session established, starting mic");
+                self.gemini_connecting = false;
+                // Immediately start mic streaming — this is a live call
+                self.start_gemini_mic();
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
+            AppEvent::GeminiAudio(pcm_data) => {
+                if let Some(ref player) = self.audio_player {
+                    player.enqueue(&pcm_data);
+                }
+                // AI is speaking — both waveforms stay live
+                if self.visual.state != OverlayState::AISpeaking {
+                    log::info!("[Gemini] AI speaking — audio arriving");
+                    self.visual.set_state(OverlayState::AISpeaking);
+                }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
+            AppEvent::GeminiText(text) => {
+                log::info!("[Gemini] Text: {}", text);
+            }
+
+            AppEvent::GeminiInterrupted => {
+                log::info!("[Gemini] Interrupted (barge-in)");
+                if let Some(ref player) = self.audio_player {
+                    player.clear();
+                }
+                // Back to listening — mic is still live
+                self.visual.set_state(OverlayState::Listening);
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
+            AppEvent::GeminiTurnComplete => {
+                log::info!("[Gemini] Turn complete — back to listening");
+                // AI finished speaking — go back to Listening (mic still live!)
+                // NOT idle — the session stays active
+                self.visual.set_state(OverlayState::Listening);
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
+            AppEvent::GeminiError(err) => {
+                log::error!("[Gemini] Error: {}", err);
+                self.disconnect_gemini();
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
+            AppEvent::GeminiClosed(reason) => {
+                log::warn!("[Gemini] Session closed: {}", reason);
+                self.disconnect_gemini();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
