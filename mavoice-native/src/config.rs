@@ -26,8 +26,11 @@ impl Default for Config {
             response_format: "json".to_string(),
             gemini_api_key: String::new(),
             mode: "groq".to_string(),
-            voice_name: "Kore".to_string(),
-            system_instruction: "You are a helpful voice assistant. Keep responses concise and conversational.".to_string(),
+            voice_name: "Aoede".to_string(),
+            system_instruction: "You are maVoice, a warm and helpful desktop voice assistant running on Linux. \
+                Keep responses concise and conversational. You have access to tools: you can search the web \
+                via Google Search, search and save memories, run shell commands on the user's machine, and \
+                delegate complex tasks to Claude. Use tools proactively when they'd help answer a question.".to_string(),
         }
     }
 }

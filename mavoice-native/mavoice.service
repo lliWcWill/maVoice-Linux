@@ -1,0 +1,21 @@
+[Unit]
+Description=maVoice — AI Voice Assistant Overlay
+Documentation=https://github.com/player3vsgpt/maVoice-Linux
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/mavoice-native
+Restart=on-failure
+RestartSec=3
+
+# Inherit graphical session environment (DISPLAY, XAUTHORITY, etc.)
+# These are imported by the desktop session manager into systemd
+PassEnvironment=DISPLAY XAUTHORITY WAYLAND_DISPLAY XDG_RUNTIME_DIR
+
+# Pass through API keys from user environment
+EnvironmentFile=-%h/.config/mavoice/env
+
+[Install]
+WantedBy=default.target

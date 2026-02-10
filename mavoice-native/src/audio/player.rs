@@ -3,16 +3,22 @@ use cpal::{Device, SampleRate, Stream, StreamConfig};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// Minimum buffered samples before playback starts (~170ms at 24kHz).
+const BUFFER_THRESHOLD: usize = 4080;
+
 /// Audio player for Gemini Live PCM output (24kHz mono s16le).
 ///
 /// Uses a shared ring buffer: the main thread enqueues decoded PCM data,
 /// and the cpal output callback drains it to the speakers.
+/// Includes playback buffering to prevent choppiness.
 pub struct AudioPlayer {
     _stream: Stream,
     buffer: Arc<Mutex<Vec<f32>>>,
     /// Recent output samples for visualization (last 1024)
     recent_output: Arc<Mutex<Vec<f32>>>,
     playing: Arc<AtomicBool>,
+    /// Whether we're currently buffering (waiting to reach threshold before playback)
+    buffering: Arc<AtomicBool>,
 }
 
 impl AudioPlayer {
@@ -41,10 +47,12 @@ impl AudioPlayer {
         let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(48000)));
         let recent_output = Arc::new(Mutex::new(Vec::<f32>::with_capacity(2048)));
         let playing = Arc::new(AtomicBool::new(false));
+        let buffering = Arc::new(AtomicBool::new(true));
 
         let buf_clone = buffer.clone();
         let recent_clone = recent_output.clone();
         let playing_clone = playing.clone();
+        let buffering_clone = buffering.clone();
         let out_channels = config.channels as usize;
 
         let stream = output_device
@@ -54,12 +62,27 @@ impl AudioPlayer {
                     let mut buf = buf_clone.lock().unwrap();
                     let mono_samples_needed = data.len() / out_channels;
 
+                    // Buffering mode: output silence until we have enough data
+                    if buffering_clone.load(Ordering::Relaxed) {
+                        if buf.len() >= BUFFER_THRESHOLD {
+                            buffering_clone.store(false, Ordering::Relaxed);
+                            log::debug!("Playback buffer filled ({} samples), starting drain", buf.len());
+                        } else {
+                            for sample in data.iter_mut() {
+                                *sample = 0.0;
+                            }
+                            playing_clone.store(false, Ordering::Relaxed);
+                            return;
+                        }
+                    }
+
                     if buf.is_empty() {
-                        // Silence
+                        // Underrun — re-enter buffering mode
                         for sample in data.iter_mut() {
                             *sample = 0.0;
                         }
                         playing_clone.store(false, Ordering::Relaxed);
+                        buffering_clone.store(true, Ordering::Relaxed);
                         return;
                     }
 
@@ -103,6 +126,7 @@ impl AudioPlayer {
             buffer,
             recent_output,
             playing,
+            buffering,
         })
     }
 
@@ -157,9 +181,11 @@ impl AudioPlayer {
     }
 
     /// Flush the playback buffer (for barge-in interruption).
+    /// Resets buffering state so next response starts fresh.
     pub fn clear(&self) {
         self.buffer.lock().unwrap().clear();
         self.recent_output.lock().unwrap().clear();
+        self.buffering.store(true, Ordering::Relaxed);
     }
 
     /// Whether audio is currently being played.

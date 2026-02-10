@@ -6,10 +6,27 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
+/// A single function call from Gemini.
+#[derive(Debug, Clone)]
+pub struct FunctionCall {
+    pub id: String,
+    pub name: String,
+    pub args: serde_json::Value,
+}
+
+/// A response to a function call, sent back to Gemini.
+#[derive(Debug, Clone)]
+pub struct FunctionResponse {
+    pub id: String,
+    pub name: String,
+    pub response: serde_json::Value,
+}
+
 /// Commands sent from the main thread to the WebSocket write task.
 enum ClientCommand {
     SendAudio(Vec<u8>),
     SendText(String),
+    SendToolResponse(Vec<FunctionResponse>),
     ActivityStart,
     ActivityEnd,
     Close,
@@ -23,6 +40,8 @@ pub enum GeminiEvent {
     Text(String),
     Interrupted,
     TurnComplete,
+    ToolCall(Vec<FunctionCall>),
+    ToolCallCancellation(Vec<String>),
     Error(String),
     Closed(String),
 }
@@ -38,6 +57,107 @@ pub struct GeminiLiveClient {
 }
 
 impl GeminiLiveClient {
+    /// Build the JSON setup message with model config, VAD, compression, and tools.
+    fn build_setup_message(voice_name: &str, system_instruction: &str) -> Value {
+        json!({
+            "setup": {
+                "model": "models/gemini-2.5-flash-native-audio-preview-12-2025",
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {
+                        "voiceConfig": {
+                            "prebuiltVoiceConfig": {
+                                "voiceName": voice_name
+                            }
+                        }
+                    }
+                },
+                "systemInstruction": {
+                    "parts": [{ "text": system_instruction }]
+                },
+                "realtimeInputConfig": {
+                    "automaticActivityDetection": {
+                        "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                        "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
+                        "prefixPaddingMs": 100,
+                        "silenceDurationMs": 500
+                    }
+                },
+                "contextWindowCompression": {
+                    "triggerTokens": 80000,
+                    "slidingWindow": {}
+                },
+                "tools": [
+                    { "googleSearch": {} },
+                    {
+                        "functionDeclarations": [
+                            {
+                                "name": "search_memory",
+                                "description": "Search the user's persistent memory/knowledge base for relevant information. Use this when the user asks about something they've previously stored or when context would help.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "query": {
+                                            "type": "string",
+                                            "description": "Search query to find relevant memories"
+                                        }
+                                    },
+                                    "required": ["query"]
+                                }
+                            },
+                            {
+                                "name": "remember",
+                                "description": "Save a piece of information to the user's persistent memory for future recall. Use when the user asks you to remember something.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {
+                                            "type": "string",
+                                            "description": "Short title for the memory"
+                                        },
+                                        "content": {
+                                            "type": "string",
+                                            "description": "Detailed content to remember"
+                                        }
+                                    },
+                                    "required": ["title", "content"]
+                                }
+                            },
+                            {
+                                "name": "run_command",
+                                "description": "Run a shell command on the user's Linux desktop. Use for file operations, system info, package management, etc.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "command": {
+                                            "type": "string",
+                                            "description": "Bash command to execute"
+                                        }
+                                    },
+                                    "required": ["command"]
+                                }
+                            },
+                            {
+                                "name": "ask_claude",
+                                "description": "Delegate a complex task to Claude (Anthropic's AI). Use for code generation, analysis, writing, or anything requiring deep reasoning.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "task": {
+                                            "type": "string",
+                                            "description": "Detailed description of the task for Claude"
+                                        }
+                                    },
+                                    "required": ["task"]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        })
+    }
+
     /// Connect to Gemini Live and start the read/write tasks.
     ///
     /// `event_tx` is a callback that delivers parsed server events back to the caller.
@@ -68,25 +188,8 @@ impl GeminiLiveClient {
 
         let (mut ws_write, mut ws_read) = ws_stream.split();
 
-        // Send setup message — matches the reference Node.js implementation exactly
-        let setup = json!({
-            "setup": {
-                "model": format!("models/{}", "gemini-2.5-flash-native-audio-preview-12-2025"),
-                "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "speechConfig": {
-                        "voiceConfig": {
-                            "prebuiltVoiceConfig": {
-                                "voiceName": voice_name
-                            }
-                        }
-                    }
-                },
-                "systemInstruction": {
-                    "parts": [{ "text": system_instruction }]
-                }
-            }
-        });
+        // Send setup message
+        let setup = Self::build_setup_message(voice_name, system_instruction);
         log::info!("[Gemini] Setup JSON: {}", serde_json::to_string_pretty(&setup).unwrap_or_default());
 
         ws_write
@@ -125,6 +228,23 @@ impl GeminiLiveClient {
                             "clientContent": {
                                 "turns": [{ "role": "user", "parts": [{ "text": text }] }],
                                 "turnComplete": true
+                            }
+                        })
+                    }
+                    ClientCommand::SendToolResponse(responses) => {
+                        let parts: Vec<Value> = responses
+                            .into_iter()
+                            .map(|r| {
+                                json!({
+                                    "id": r.id,
+                                    "name": r.name,
+                                    "response": r.response
+                                })
+                            })
+                            .collect();
+                        json!({
+                            "toolResponse": {
+                                "functionResponses": parts
                             }
                         })
                     }
@@ -241,9 +361,38 @@ impl GeminiLiveClient {
             return;
         }
 
-        // toolCall — not handling tools in maVoice (yet)
-        if msg.get("toolCall").is_some() {
-            log::debug!("[Gemini] Tool call received (ignored in maVoice)");
+        // toolCall — parse function calls and forward to app
+        if let Some(tool_call) = msg.get("toolCall") {
+            let mut calls = Vec::new();
+            if let Some(fn_calls) = tool_call.get("functionCalls").and_then(|v| v.as_array()) {
+                for fc in fn_calls {
+                    let id = fc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let name = fc.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let args = fc.get("args").cloned().unwrap_or(json!({}));
+                    log::info!("[Gemini] Tool call: {}({}) id={}", name, args, id);
+                    calls.push(FunctionCall { id, name, args });
+                }
+            }
+            if !calls.is_empty() {
+                let _ = tx.send(GeminiEvent::ToolCall(calls));
+            }
+            return;
+        }
+
+        // toolCallCancellation — cancel pending calls
+        if let Some(cancel) = msg.get("toolCallCancellation") {
+            let mut ids = Vec::new();
+            if let Some(arr) = cancel.get("ids").and_then(|v| v.as_array()) {
+                for id in arr {
+                    if let Some(s) = id.as_str() {
+                        ids.push(s.to_string());
+                    }
+                }
+            }
+            log::info!("[Gemini] Tool call cancellation: {:?}", ids);
+            if !ids.is_empty() {
+                let _ = tx.send(GeminiEvent::ToolCallCancellation(ids));
+            }
             return;
         }
 
@@ -333,6 +482,13 @@ impl GeminiLiveClient {
     pub fn send_activity_end(&self) {
         if self.open.load(Ordering::Relaxed) {
             let _ = self.cmd_tx.send(ClientCommand::ActivityEnd);
+        }
+    }
+
+    /// Send tool/function responses back to Gemini.
+    pub fn send_tool_response(&self, responses: Vec<FunctionResponse>) {
+        if self.open.load(Ordering::Relaxed) {
+            let _ = self.cmd_tx.send(ClientCommand::SendToolResponse(responses));
         }
     }
 

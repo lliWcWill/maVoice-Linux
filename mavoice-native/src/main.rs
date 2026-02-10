@@ -5,6 +5,7 @@ mod config;
 mod renderer;
 mod state_machine;
 mod system;
+mod tools;
 
 use std::sync::Arc;
 use winit::event_loop::EventLoop;

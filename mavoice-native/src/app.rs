@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
@@ -6,7 +7,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId, WindowLevel};
 
-use crate::api::gemini::GeminiEvent;
+use crate::api::gemini::{FunctionCall, FunctionResponse, GeminiEvent};
 use crate::api::{GeminiLiveClient, GroqClient};
 use crate::audio::{AudioPlayer, GroqRecorder};
 
@@ -37,8 +38,16 @@ pub enum AppEvent {
     GeminiText(String),
     GeminiInterrupted,
     GeminiTurnComplete,
+    GeminiToolCall(Vec<FunctionCall>),
+    GeminiToolCallCancellation(Vec<String>),
     GeminiError(String),
     GeminiClosed(String),
+    // Tool execution results
+    ToolResult {
+        call_id: String,
+        name: String,
+        result: serde_json::Value,
+    },
 }
 
 /// Click tracking for single/double click detection
@@ -86,6 +95,8 @@ pub struct App {
     recording_mode: Option<VoiceMode>,
     audio_player: Option<AudioPlayer>,
     gemini_connecting: bool,
+    /// IDs of tool calls currently in flight (for cancellation tracking)
+    pending_tool_calls: HashSet<String>,
 }
 
 impl App {
@@ -144,6 +155,7 @@ impl App {
             recording_mode: None,
             audio_player: None,
             gemini_connecting: false,
+            pending_tool_calls: HashSet::new(),
         }
     }
 
@@ -318,6 +330,10 @@ impl App {
                                 GeminiEvent::Text(text) => AppEvent::GeminiText(text),
                                 GeminiEvent::Interrupted => AppEvent::GeminiInterrupted,
                                 GeminiEvent::TurnComplete => AppEvent::GeminiTurnComplete,
+                                GeminiEvent::ToolCall(calls) => AppEvent::GeminiToolCall(calls),
+                                GeminiEvent::ToolCallCancellation(ids) => {
+                                    AppEvent::GeminiToolCallCancellation(ids)
+                                }
                                 GeminiEvent::Error(e) => AppEvent::GeminiError(e),
                                 GeminiEvent::Closed(reason) => AppEvent::GeminiClosed(reason),
                             };
@@ -391,6 +407,27 @@ impl App {
         self.gemini_connecting = false;
         self.recording_mode = None;
         self.visual.set_state(OverlayState::Idle);
+    }
+
+    /// Dispatch tool calls to async executors, tracking their IDs.
+    fn dispatch_tool_calls(&mut self, calls: Vec<FunctionCall>) {
+        for call in calls {
+            self.pending_tool_calls.insert(call.id.clone());
+
+            let proxy = self.event_proxy.clone();
+            let call_id = call.id.clone();
+            let call_name = call.name.clone();
+            let call_args = call.args.clone();
+
+            self.tokio_rt.spawn(async move {
+                let result = crate::tools::execute(&call_name, &call_args).await;
+                let _ = proxy.send_event(AppEvent::ToolResult {
+                    call_id,
+                    name: call_name,
+                    result,
+                });
+            });
+        }
     }
 
     fn set_skip_taskbar(name: &str) {
@@ -773,6 +810,40 @@ impl ApplicationHandler<AppEvent> for App {
                 log::info!("[Gemini] Turn complete — back to listening");
                 self.visual.set_state(OverlayState::Listening);
                 self.request_redraw_all();
+            }
+
+            AppEvent::GeminiToolCall(calls) => {
+                log::info!("[Gemini] Tool calls received: {}", calls.len());
+                self.dispatch_tool_calls(calls);
+            }
+
+            AppEvent::GeminiToolCallCancellation(ids) => {
+                log::info!("[Gemini] Tool call cancellation: {:?}", ids);
+                for id in &ids {
+                    self.pending_tool_calls.remove(id);
+                }
+            }
+
+            AppEvent::ToolResult {
+                call_id,
+                name,
+                result,
+            } => {
+                // Only send response if the call wasn't cancelled
+                if self.pending_tool_calls.remove(&call_id) {
+                    log::info!("[Tool] {} completed (id={})", name, call_id);
+                    let response = FunctionResponse {
+                        id: call_id,
+                        name,
+                        response: result,
+                    };
+                    let guard = GEMINI_CLIENT.lock().unwrap();
+                    if let Some(ref client) = *guard {
+                        client.send_tool_response(vec![response]);
+                    }
+                } else {
+                    log::info!("[Tool] {} result dropped (cancelled, id={})", name, call_id);
+                }
             }
 
             AppEvent::GeminiError(err) => {
