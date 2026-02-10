@@ -45,19 +45,19 @@ The **native version** (`mavoice-native/`) is the active development target. The
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  mavoice-native (pure Rust binary)                   │
+│          mavoice-native (pure Rust binary)           │
 │                                                      │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐ │
-│  │ wgpu/WGSL│  │ cpal     │  │ Gemini Live (WS)   │ │
-│  │ renderer │  │ audio    │  │ bidirectional voice │ │
-│  │ 2 windows│  │ capture  │  │ + function calling  │ │
-│  └──────────┘  └──────────┘  └────────────────────┘ │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐  │
+│  │ wgpu/WGSL│  │  cpal    │  │ Gemini Live (WS)   │  │
+│  │ renderer │  │  audio   │  │ bidirectional voice│  │
+│  │ 2 windows│  │ capture  │  │ + function calling │  │
+│  └──────────┘  └──────────┘  └────────────────────┘  │
 │                                                      │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐ │
-│  │ Groq API │  │ Global   │  │ Dashboard WS       │ │
-│  │ Whisper  │  │ Hotkeys  │  │ broadcast (3001)   │ │
-│  │ STT      │  │ F2 / F3  │  │ → claudegram UI    │ │
-│  └──────────┘  └──────────┘  └────────────────────┘ │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐  │
+│  │ Groq API │  │ Global   │  │ Dashboard WS       │  │
+│  │ Whisper  │  │ Hotkeys  │  │ broadcast (3001)   │  │
+│  │ STT      │  │ F2 / F3  │  │ → claudegram UI    │  │
+│  └──────────┘  └──────────┘  └────────────────────┘  │
 │                                                      │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │ Tools: search_memory, remember, run_command,    │ │
